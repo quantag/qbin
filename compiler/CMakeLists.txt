@@ -17,12 +17,14 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 set(QBIN_COMPILER_SOURCES
   src/main.cpp
   src/compiler.cpp
+  src/tools.cpp
   src/qasm_frontend.cpp
 )
 
 set(QBIN_COMPILER_HEADERS
   include/qbin_compiler/compiler.hpp
   include/qbin_compiler/qasm_frontend.hpp
+  include/qbin_compiler/tools.hpp
 )
 
 add_executable(qbin-compile ${QBIN_COMPILER_SOURCES} ${QBIN_COMPILER_HEADERS})
