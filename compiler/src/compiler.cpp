@@ -1,6 +1,3 @@
-// compiler.cpp - Compile OpenQASM (subset) to QBIN using the frontend IR.
-// Status: MVP. Self-contained encoder; parser lives in qasm_frontend.*
-
 #include "qbin_compiler/compiler.hpp"
 #include "qbin_compiler/qasm_frontend.hpp"
 
@@ -10,8 +7,6 @@
 #include <vector>
 
 namespace qbin_compiler {
-
-    // --------------------------- Low-level writers ---------------------------
 
     static inline void push_u32_le(std::vector<uint8_t>& out, uint32_t v) {
         out.push_back(static_cast<uint8_t>(v & 0xFF));
@@ -64,8 +59,6 @@ namespace qbin_compiler {
         return crc ^ 0xFFFFFFFFu;
     }
 
-    // --------------------------- Encoder ---------------------------
-
     static inline void encode_inst_section(const frontend::Program& prog, std::vector<uint8_t>& out) {
         // INST magic
         push_str(out, "INST");
@@ -73,21 +66,23 @@ namespace qbin_compiler {
         push_uleb128(out, static_cast<uint64_t>(prog.instrs.size()));
         // encode instructions
         for (const auto& I : prog.instrs) {
-            // Opcodes in frontend::Opcode are already aligned with spec
             out.push_back(static_cast<uint8_t>(I.op));
             uint8_t mask = 0;
             if (I.a >= 0) mask |= 1u << 0;
             if (I.b >= 0) mask |= 1u << 1;
             if (I.c >= 0) mask |= 1u << 2;
             if (I.has_angle0) mask |= 1u << 3;
+            if (I.has_aux)    mask |= 1u << 7;
             out.push_back(mask);
             if (I.a >= 0) push_uleb128(out, static_cast<uint64_t>(I.a));
             if (I.b >= 0) push_uleb128(out, static_cast<uint64_t>(I.b));
             if (I.c >= 0) push_uleb128(out, static_cast<uint64_t>(I.c));
-            if (I.has_angle0) {
-                // tag for angle_0: 0 = f32, 1 = param_ref. MVP writes literal f32.
-                out.push_back(0);
-                push_f32_le(out, I.angle0);
+            if (I.has_angle0) { out.push_back(0); push_f32_le(out, I.angle0); } // tag 0 = f32
+            if (I.has_aux) { push_u32_le(out, I.aux_u32); }
+            // IF_* carry an extra imm8 after operands
+            uint8_t opc = static_cast<uint8_t>(I.op);
+            if (opc == 0x81 || opc == 0x82) {
+                out.push_back(I.has_imm8 ? I.imm8 : 0);
             }
         }
     }
@@ -119,11 +114,9 @@ namespace qbin_compiler {
 
         // Section table entry for INST
         std::vector<uint8_t> table;
-        // Section ID "INST" as u32 little-endian
-        uint32_t inst_id = 0;
-        std::memcpy(&inst_id, "INST", 4);
+        uint32_t inst_id = 0; std::memcpy(&inst_id, "INST", 4);
         push_u32_le(table, inst_id);
-        push_u32_le(table, section_table_offset + section_table_size); // first payload @ offset 40
+        push_u32_le(table, section_table_offset + section_table_size); // offset 40
         push_u32_le(table, static_cast<uint32_t>(inst.size()));
         push_u32_le(table, 0); // flags
 
@@ -132,12 +125,10 @@ namespace qbin_compiler {
         blob.reserve(header.size() + table.size() + inst.size());
         blob.insert(blob.end(), header.begin(), header.end());
         blob.insert(blob.end(), table.begin(), table.end());
-        blob.insert(blob.end(), inst.begin(), inst.end()); // write raw payload
+        blob.insert(blob.end(), inst.begin(), inst.end());
 
         return blob;
     }
-
-    // --------------------------- Public API ---------------------------
 
     std::vector<uint8_t> compile_qasm_to_qbin_min(const std::string& qasm_text, bool verbose) {
         frontend::Program prog = frontend::parse_qasm_subset(qasm_text, verbose);
