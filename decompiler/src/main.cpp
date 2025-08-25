@@ -46,9 +46,13 @@ int main(int argc, char** argv) {
         return 1;
     }
 
-    // Ensure a trailing newline for byte-for-byte round-trip
+
+    // Ensure exactly one blank line at EOF (two trailing newlines)
     std::string out = qasm;
-    if (!out.empty() && out.back() != '\n') out.push_back('\n');
+    // Normalize: strip any existing trailing newlines first
+    while (!out.empty() and out.back() == '\n') out.pop_back();
+    // Then add exactly two newlines
+    out.append("\n\n");
 
     if (out_path.empty()) {
         std::cout << out;
