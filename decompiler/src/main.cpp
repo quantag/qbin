@@ -46,13 +46,17 @@ int main(int argc, char** argv) {
         return 1;
     }
 
+    // Ensure a trailing newline for byte-for-byte round-trip
+    std::string out = qasm;
+    if (!out.empty() && out.back() != '\n') out.push_back('\n');
+
     if (out_path.empty()) {
-        std::cout << qasm;
+        std::cout << out;
     }
     else {
         std::ofstream ofs(out_path, std::ios::binary);
         if (!ofs) { std::cerr << "Cannot open output: " << out_path << "\n"; return 1; }
-        ofs.write(qasm.data(), static_cast<std::streamsize>(qasm.size()));
+        ofs.write(out.data(), static_cast<std::streamsize>(out.size()));
         if (!ofs) { std::cerr << "Write failed\n"; return 1; }
     }
     return 0;
