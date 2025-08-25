@@ -1,4 +1,5 @@
 #include "qbin_decompiler/decompiler.hpp"
+#include "qbin_decompiler/tools.hpp"
 
 #include <algorithm>
 #include <cctype>
@@ -7,88 +8,11 @@
 #include <cstring>
 #include <iomanip>
 #include <sstream>
+#include <stdexcept>
 #include <string>
 #include <vector>
 
 namespace qbin_decompiler {
-
-    static inline uint32_t rd_u32le(const uint8_t* p) {
-        return (uint32_t)p[0] | ((uint32_t)p[1] << 8) | ((uint32_t)p[2] << 16) | ((uint32_t)p[3] << 24);
-    }
-
-    struct SectionEntry {
-        uint32_t id;
-        uint32_t offset;
-        uint32_t size;
-        uint32_t flags;
-    };
-
-    static inline std::string id_to_ascii(uint32_t id) {
-        char s[5];
-        s[0] = char(id & 0xFF);
-        s[1] = char((id >> 8) & 0xFF);
-        s[2] = char((id >> 16) & 0xFF);
-        s[3] = char((id >> 24) & 0xFF);
-        s[4] = 0;
-        return std::string(s);
-    }
-
-    // ULEB128 with local end bound
-    static bool read_uleb128_bound(const std::vector<uint8_t>& b, size_t& i, size_t end, uint64_t& v) {
-        v = 0; int shift = 0;
-        while (i < end) {
-            uint8_t byte = b[i++];
-            v |= (uint64_t)(byte & 0x7F) << shift;
-            if ((byte & 0x80) == 0) return true;
-            shift += 7;
-            if (shift > 63) return false;
-        }
-        return false;
-    }
-
-    static bool read_f32le_bound(const std::vector<uint8_t>& b, size_t& i, size_t end, float& out) {
-        if (i + 4 > end) return false;
-        uint32_t u = rd_u32le(&b[i]); i += 4;
-        std::memcpy(&out, &u, 4);
-        return true;
-    }
-
-    static bool decode_header_and_table(const std::vector<uint8_t>& b,
-        uint8_t& major, uint8_t& minor,
-        uint32_t& table_off, uint32_t& table_size,
-        std::vector<SectionEntry>& table,
-        std::string& err, bool verbose) {
-        if (b.size() < 24) { err = "file too small for header"; return false; }
-        if (std::memcmp(b.data(), "QBIN", 4) != 0) { err = "bad magic"; return false; }
-        major = b[4];
-        minor = b[5];
-        uint8_t hdr_size = b[7];
-        if (hdr_size != 24) { err = "unexpected header size"; return false; }
-        uint32_t section_count = rd_u32le(&b[8]);
-        table_off = rd_u32le(&b[12]);
-        table_size = rd_u32le(&b[16]);
-        if (table_off + table_size > b.size()) { err = "section table OOB"; return false; }
-        if (section_count == 0 || table_size != section_count * 16) { err = "table size mismatch"; return false; }
-        table.clear();
-        table.reserve(section_count);
-        size_t p = table_off;
-        for (uint32_t i = 0; i < section_count; ++i) {
-            SectionEntry e;
-            e.id = rd_u32le(&b[p + 0]);
-            e.offset = rd_u32le(&b[p + 4]);
-            e.size = rd_u32le(&b[p + 8]);
-            e.flags = rd_u32le(&b[p + 12]);
-            if ((size_t)e.offset + (size_t)e.size > b.size()) { err = "section out of bounds"; return false; }
-            table.push_back(e);
-            p += 16;
-        }
-        if (verbose) {
-            for (const auto& e : table) {
-                std::fprintf(stderr, "  [%s] off=%u size=%u flags=%u\n", id_to_ascii(e.id).c_str(), e.offset, e.size, e.flags);
-            }
-        }
-        return true;
-    }
 
     struct DecodedInstr {
         uint8_t opcode = 0;
@@ -101,22 +25,29 @@ namespace qbin_decompiler {
         uint8_t imm8 = 0;
     };
 
+    // decode INST section (kept internal)
     static bool decode_inst_section(const std::vector<uint8_t>& b, size_t off, size_t size,
         std::vector<DecodedInstr>& out, std::string& err, bool verbose = false) {
+
+        using namespace qbin_decompiler::tools;
+
         if (off + size > b.size()) { err = "INST OOB"; return false; }
         size_t i = off, end = off + size;
         if (i + 4 > end) { err = "short INST"; return false; }
         if (std::memcmp(&b[i], "INST", 4) != 0) { err = "INST magic missing"; return false; }
         i += 4;
+
         uint64_t n = 0;
         if (!read_uleb128_bound(b, i, end, n)) { err = "bad instr_count"; return false; }
         out.clear();
         out.reserve((size_t)n);
+
         for (uint64_t k = 0; k < n; ++k) {
             if (i + 2 > end) { err = "truncated instruction header"; return false; }
             DecodedInstr di{};
             di.opcode = b[i++];
             uint8_t mask = b[i++];
+
             if (verbose) std::fprintf(stderr, "idx=%llu: op=0x%02X mask=0x%02X @%zu\n",
                 (unsigned long long)k, di.opcode, mask, i);
 
@@ -137,7 +68,9 @@ namespace qbin_decompiler {
                     uint64_t dummy; if (!read_uleb128_bound(b, i, end, dummy)) { err = "angle param_ref OOB"; return false; }
                     di.has_angle0 = true; di.angle0 = 0.0f;
                 }
-                else { err = "unknown angle tag"; return false; }
+                else {
+                    err = "unknown angle tag"; return false;
+                }
             }
 
             // aux_u32
@@ -203,31 +136,37 @@ namespace qbin_decompiler {
         std::string& qasm_out,
         std::string& err,
         bool verbose) {
-        uint8_t major = 0, minor = 0;
-        uint32_t table_off = 0, table_size = 0;
-        std::vector<SectionEntry> table;
-        if (!decode_header_and_table(buf, major, minor, table_off, table_size, table, err, verbose)) {
+
+        using namespace qbin_decompiler::tools;
+
+        // Read v1 header (20 bytes), no section table
+        FileHeader hdr{};
+        size_t pos = 0;
+        if (!read_header_v1(buf, pos, hdr, err, verbose)) {
             return false;
         }
 
-        // Find INST
-        uint32_t inst_id = 0; std::memcpy(&inst_id, "INST", 4);
-        const SectionEntry* inst = nullptr;
-        for (const auto& e : table) { if (e.id == inst_id) { inst = &e; break; } }
-        if (!inst) { err = "No INST section found"; return false; }
+        // After header, the single INST section/tag starts immediately and runs to EOF.
+        if (pos + 4 > buf.size()) { err = "no INST tag after header"; return false; }
+        if (std::memcmp(&buf[pos], "INST", 4) != 0) {
+            err = "expected INST tag after header";
+            return false;
+        }
+        size_t inst_off = pos;
+        size_t inst_size = buf.size() - inst_off;
 
         std::vector<DecodedInstr> instrs;
-        if (!decode_inst_section(buf, inst->offset, inst->size, instrs, err, verbose)) {
+        if (!decode_inst_section(buf, inst_off, inst_size, instrs, err, verbose)) {
             return false;
         }
 
-        // Infer sizes
+        // Infer register sizes
         int max_q = -1, max_c = -1;
         for (const auto& di : instrs) {
             max_q = std::max(max_q, di.a);
             max_q = std::max(max_q, di.b);
             max_q = std::max(max_q, di.c);
-            if (di.opcode == 0x30 /*MEASURE*/ && di.has_aux) max_c = std::max(max_c, int(di.aux));
+            if (di.opcode == 0x30 /*measure*/ && di.has_aux) max_c = std::max(max_c, int(di.aux));
             if ((di.opcode == 0x81 || di.opcode == 0x82) && di.has_aux) max_c = std::max(max_c, int(di.aux));
         }
         int num_qubits = (max_q >= 0) ? (max_q + 1) : 0;
@@ -237,7 +176,7 @@ namespace qbin_decompiler {
         std::ostringstream q;
         q << "OPENQASM 3.0;\n";
         if (num_qubits > 0) q << "qubit[" << num_qubits << "] q;\n";
-        if (num_bits > 0) q << "bit[" << num_bits << "] c;\n";
+        if (num_bits > 0)   q << "bit[" << num_bits << "] c;\n";
         q << "\n";
 
         q << std::setprecision(9);
@@ -259,11 +198,12 @@ namespace qbin_decompiler {
             case 0x0D: q << "rz(" << (di.has_angle0 ? di.angle0 : 0.0f) << ") q[" << di.a << "];\n"; break;
             case 0x0E: q << "phase(" << (di.has_angle0 ? di.angle0 : 0.0f) << ") q[" << di.a << "];\n"; break;
             case 0x10: q << "cx q[" << di.a << "], q[" << di.b << "];\n"; break;
-            case 0x11: q << "cz " << "q[" << di.a << "], q[" << di.b << "];\n"; break;
+            case 0x11: q << "cz q[" << di.a << "], q[" << di.b << "];\n"; break;
             case 0x13: q << "swap q[" << di.a << "], q[" << di.b << "];\n"; break;
-            case 0x15: q << "crx q[" << di.a << "], q[" << di.b << "], (" << (di.has_angle0 ? di.angle0 : 0.0f) << ");\n"; break;
-            case 0x16: q << "cry q[" << di.a << "], q[" << di.b << "], (" << (di.has_angle0 ? di.angle0 : 0.0f) << ");\n"; break;
-            case 0x17: q << "crz q[" << di.a << "], q[" << di.b << "], (" << (di.has_angle0 ? di.angle0 : 0.0f) << ");\n"; break;
+            case 0x15: q << "crx(" << (di.has_angle0 ? di.angle0 : 0.0f) << ") q[" << di.a << "], q[" << di.b << "];\n"; break;
+            case 0x16: q << "cry(" << (di.has_angle0 ? di.angle0 : 0.0f) << ") q[" << di.a << "], q[" << di.b << "];\n"; break;
+            case 0x17: q << "crz(" << (di.has_angle0 ? di.angle0 : 0.0f) << ") q[" << di.a << "], q[" << di.b << "];\n"; break;
+
             case 0x20: q << "rxx(" << (di.has_angle0 ? di.angle0 : 0.0f) << ") q[" << di.a << "], q[" << di.b << "];\n"; break;
             case 0x21: q << "ryy(" << (di.has_angle0 ? di.angle0 : 0.0f) << ") q[" << di.a << "], q[" << di.b << "];\n"; break;
             case 0x22: q << "rzz(" << (di.has_angle0 ? di.angle0 : 0.0f) << ") q[" << di.a << "], q[" << di.b << "];\n"; break;
@@ -273,6 +213,7 @@ namespace qbin_decompiler {
             case 0x81:
             case 0x82: {
                 int val = di.has_imm8 ? di.imm8 : 0;
+                // Try single-instruction inline if followed by body + endif
                 if (idx + 2 < instrs.size() && instrs[idx + 2].opcode == 0x8F) {
                     const auto& body = instrs[idx + 1];
                     std::ostringstream one;
@@ -302,13 +243,13 @@ namespace qbin_decompiler {
                         break;
                     }
                 }
-                // fallback multi-line
+                // Fallback multi-line
                 q << "if (c[" << di.aux << "] " << (di.opcode == 0x81 ? "==" : "!=") << " " << val << ") {\n";
                 size_t j = idx + 1;
                 for (; j < instrs.size(); ++j) {
                     if (instrs[j].opcode == 0x8F) break;
                     const auto& body = instrs[j];
-                    q << "  " << opcode_name(body.opcode) << " ...\n"; // concise fallback
+                    q << "  " << opcode_name(body.opcode) << " ...\n";
                 }
                 q << "}\n";
                 idx = (j < instrs.size()) ? j : instrs.size() - 1;
