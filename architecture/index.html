@@ -1,0 +1,1059 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+      
+      
+      
+        <link rel="prev" href="../usage/">
+      
+      
+      
+      <link rel="icon" href="../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.6.18">
+    
+    
+      
+        <title>Architecture - QBIN</title>
+      
+    
+    
+      <link rel="stylesheet" href="../assets/stylesheets/main.7e37652d.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+    <script>__md_scope=new URL("..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+    
+  </head>
+  
+  
+    <body dir="ltr">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#qbin-architecture" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href=".." title="QBIN" class="md-header__button md-logo" aria-label="QBIN" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            QBIN
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Architecture
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+
+<nav class="md-nav md-nav--primary" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href=".." title="QBIN" class="md-nav__button md-logo" aria-label="QBIN" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    QBIN
+  </label>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href=".." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Home
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../install/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Installation
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../usage/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Usage
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    Architecture
+    
+  </span>
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    Architecture
+    
+  </span>
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#1-goals-and-non-goals" class="md-nav__link">
+    <span class="md-ellipsis">
+      1) Goals and Non-Goals
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#2-project-layout-high-level" class="md-nav__link">
+    <span class="md-ellipsis">
+      2) Project Layout (high-level)
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#3-format-layers-data-model" class="md-nav__link">
+    <span class="md-ellipsis">
+      3) Format Layers (data model)
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#4-component-overview" class="md-nav__link">
+    <span class="md-ellipsis">
+      4) Component Overview
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="4) Component Overview">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#41-libqbin-reference-library" class="md-nav__link">
+    <span class="md-ellipsis">
+      4.1 libqbin (reference library)
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#42-compiler-qbin-compile" class="md-nav__link">
+    <span class="md-ellipsis">
+      4.2 Compiler (qbin-compile)
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#43-decompiler-qbin-decompile" class="md-nav__link">
+    <span class="md-ellipsis">
+      4.3 Decompiler (qbin-decompile)
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#44-tools" class="md-nav__link">
+    <span class="md-ellipsis">
+      4.4 Tools
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#5-data-flow-and-apis" class="md-nav__link">
+    <span class="md-ellipsis">
+      5) Data Flow and APIs
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="5) Data Flow and APIs">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#51-read-path-pseudocode" class="md-nav__link">
+    <span class="md-ellipsis">
+      5.1 Read Path (pseudocode)
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#52-write-path-pseudocode" class="md-nav__link">
+    <span class="md-ellipsis">
+      5.2 Write Path (pseudocode)
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#53-public-api-surfaces" class="md-nav__link">
+    <span class="md-ellipsis">
+      5.3 Public API Surfaces
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#6-instruction-encoding-summary" class="md-nav__link">
+    <span class="md-ellipsis">
+      6) Instruction Encoding (summary)
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#7-names-metadata-and-fidelity" class="md-nav__link">
+    <span class="md-ellipsis">
+      7) Names, Metadata, and Fidelity
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#8-security-and-robustness" class="md-nav__link">
+    <span class="md-ellipsis">
+      8) Security and Robustness
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#9-performance-considerations" class="md-nav__link">
+    <span class="md-ellipsis">
+      9) Performance Considerations
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#10-testing-strategy" class="md-nav__link">
+    <span class="md-ellipsis">
+      10) Testing Strategy
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#11-extension-mechanism" class="md-nav__link">
+    <span class="md-ellipsis">
+      11) Extension Mechanism
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#12-integration-examples" class="md-nav__link">
+    <span class="md-ellipsis">
+      12) Integration Examples
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#13-roadmap-excerpt" class="md-nav__link">
+    <span class="md-ellipsis">
+      13) Roadmap (excerpt)
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#14-glossary" class="md-nav__link">
+    <span class="md-ellipsis">
+      14) Glossary
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#1-goals-and-non-goals" class="md-nav__link">
+    <span class="md-ellipsis">
+      1) Goals and Non-Goals
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#2-project-layout-high-level" class="md-nav__link">
+    <span class="md-ellipsis">
+      2) Project Layout (high-level)
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#3-format-layers-data-model" class="md-nav__link">
+    <span class="md-ellipsis">
+      3) Format Layers (data model)
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#4-component-overview" class="md-nav__link">
+    <span class="md-ellipsis">
+      4) Component Overview
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="4) Component Overview">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#41-libqbin-reference-library" class="md-nav__link">
+    <span class="md-ellipsis">
+      4.1 libqbin (reference library)
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#42-compiler-qbin-compile" class="md-nav__link">
+    <span class="md-ellipsis">
+      4.2 Compiler (qbin-compile)
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#43-decompiler-qbin-decompile" class="md-nav__link">
+    <span class="md-ellipsis">
+      4.3 Decompiler (qbin-decompile)
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#44-tools" class="md-nav__link">
+    <span class="md-ellipsis">
+      4.4 Tools
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#5-data-flow-and-apis" class="md-nav__link">
+    <span class="md-ellipsis">
+      5) Data Flow and APIs
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="5) Data Flow and APIs">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#51-read-path-pseudocode" class="md-nav__link">
+    <span class="md-ellipsis">
+      5.1 Read Path (pseudocode)
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#52-write-path-pseudocode" class="md-nav__link">
+    <span class="md-ellipsis">
+      5.2 Write Path (pseudocode)
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#53-public-api-surfaces" class="md-nav__link">
+    <span class="md-ellipsis">
+      5.3 Public API Surfaces
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#6-instruction-encoding-summary" class="md-nav__link">
+    <span class="md-ellipsis">
+      6) Instruction Encoding (summary)
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#7-names-metadata-and-fidelity" class="md-nav__link">
+    <span class="md-ellipsis">
+      7) Names, Metadata, and Fidelity
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#8-security-and-robustness" class="md-nav__link">
+    <span class="md-ellipsis">
+      8) Security and Robustness
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#9-performance-considerations" class="md-nav__link">
+    <span class="md-ellipsis">
+      9) Performance Considerations
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#10-testing-strategy" class="md-nav__link">
+    <span class="md-ellipsis">
+      10) Testing Strategy
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#11-extension-mechanism" class="md-nav__link">
+    <span class="md-ellipsis">
+      11) Extension Mechanism
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#12-integration-examples" class="md-nav__link">
+    <span class="md-ellipsis">
+      12) Integration Examples
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#13-roadmap-excerpt" class="md-nav__link">
+    <span class="md-ellipsis">
+      13) Roadmap (excerpt)
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#14-glossary" class="md-nav__link">
+    <span class="md-ellipsis">
+      14) Glossary
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+
+<h1 id="qbin-architecture">QBIN Architecture</h1>
+<p>Status: DRAFT<br />
+Audience: developers of the spec, compiler, decompiler, libraries, and tools</p>
+<p>This document explains the architecture of the QBIN project and how the
+components fit together. It complements the normative format definition
+in <code>spec/qbin-spec.md</code> and the developer cheat sheet in <code>spec/qbin-quickref.md</code>.</p>
+<hr />
+<h2 id="1-goals-and-non-goals">1) Goals and Non-Goals</h2>
+<p>Goals:
+- Compact, stream-decodable representation of OpenQASM programs.
+- Stable containers with clear versioning and forward compatibility.
+- Clean separation between specification, libraries, and tools.
+- Easy round-trip: QASM -&gt; QBIN -&gt; QASM with predictable fidelity.
+- Vendor extension points that do not break core compatibility.</p>
+<p>Non-goals (v1):
+- Full general-purpose bytecode semantics (loops, arbitrary classical compute).
+- VM execution environment. QBIN is a container + instruction stream, not a VM.</p>
+<hr />
+<h2 id="2-project-layout-high-level">2) Project Layout (high-level)</h2>
+<pre><code>qbin/
+  spec/                -&gt; Format specification and quick reference
+  lib/                 -&gt; Reference libraries (C++, Python, Rust)
+  compiler/            -&gt; QASM -&gt; QBIN CLI and front-ends
+  decompiler/          -&gt; QBIN -&gt; QASM CLI
+  tools/               -&gt; validators, inspectors, scripts
+  examples/            -&gt; QASM and QBIN examples and round-trip
+  tests/               -&gt; unit, conformance, fuzz
+  docs/                -&gt; architecture, roadmap, design decisions
+</code></pre>
+<hr />
+<h2 id="3-format-layers-data-model">3) Format Layers (data model)</h2>
+<p>QBIN is a layered container:</p>
+<pre><code>+----------------------+
+|  Header (fixed)      |
++----------------------+
+|  Section Table       |
++----------------------+
+|  Sections...         |
+|  - INST (required)   |
+|  - STRS, META, ...   |
+|  - EXTS (optional)   |
++----------------------+
+</code></pre>
+<ul>
+<li>Header: magic, version, counts, offsets, CRC.</li>
+<li>Section Table: descriptors (id, offset, size, flags).</li>
+<li>Sections: independent typed payloads, 8-byte aligned.</li>
+<li>INST: instruction stream (opcodes + operand mask + operands).</li>
+<li>Optional sections add metadata, strings, gates, debug, signatures.</li>
+</ul>
+<hr />
+<h2 id="4-component-overview">4) Component Overview</h2>
+<h3 id="41-libqbin-reference-library">4.1 libqbin (reference library)</h3>
+<ul>
+<li>Parse/validate: header, table, section ranges, checksums.</li>
+<li>Section readers/writers: STRS, META, QUBS, BITS, PARS, GATE, INST, DEBG, SIGN.</li>
+<li>Error taxonomy aligned with spec (ERR_*).</li>
+<li>Streaming decode of INST (zero-copy where possible).</li>
+<li>ABI-stable C API (thin) over C++ classes for easier bindings.</li>
+<li>Python and Rust bindings reuse the C API surface.</li>
+</ul>
+<h3 id="42-compiler-qbin-compile">4.2 Compiler (qbin-compile)</h3>
+<p>Pipeline:</p>
+<pre><code>QASM text --&gt; Front-end (lexer+parser) --&gt; IR (normalized ops)
+         --&gt; Lowering to QBIN opcodes --&gt; Section assembly
+         --&gt; Header+Table+INST (+STRS/META/GATE/DEBG as requested)
+</code></pre>
+<p>Key choices:
+- Normalize gate set to v1 core opcodes; custom gates go to GATE+CALLG.
+- Parameters become PARS entries; angles either literal or param_ref.
+- Qubit and bit indices normalized to zero-based ints.
+- Optional: emit STRS/META for better decompilation fidelity.</p>
+<h3 id="43-decompiler-qbin-decompile">4.3 Decompiler (qbin-decompile)</h3>
+<p>Pipeline:</p>
+<pre><code>QBIN --&gt; Reader --&gt; Validate --&gt; Recreate textual QASM
+      --&gt; Reconstruct declarations, names (from STRS/QUBS/BITS)
+      --&gt; Emit QASM 2.x or 3.x dialects as requested
+</code></pre>
+<p>Notes:
+- If names are missing, synthesize like q[0], c[1].
+- CALLG resolved against GATE; opaque gates emitted as calls.</p>
+<h3 id="44-tools">4.4 Tools</h3>
+<ul>
+<li>qbin-validate: syntax + structural validation, checksums, alignment.</li>
+<li>qbin-inspect: header/table dump, section hexdumps, INST decode.</li>
+<li>Fuzz harness: libFuzzer/AFL entry points for <code>reader</code> functions.</li>
+<li>Corpus management scripts, conformance runner.</li>
+</ul>
+<hr />
+<h2 id="5-data-flow-and-apis">5) Data Flow and APIs</h2>
+<h3 id="51-read-path-pseudocode">5.1 Read Path (pseudocode)</h3>
+<pre><code>read_all(fd):
+  hdr = read_header(fd)
+  check_crc(hdr)
+  table = read_section_table(fd, hdr.section_count, hdr.section_table_*)
+  for entry in table:
+    ensure_aligned(entry.offset)
+    ensure_inbounds(entry)
+  sections = { id: map_entry(fd, entry) }
+  inst = parse_INST(sections[&quot;INST&quot;])
+  return QBIN(hdr, table, sections, inst)
+</code></pre>
+<h3 id="52-write-path-pseudocode">5.2 Write Path (pseudocode)</h3>
+<pre><code>encode(qbin):
+  layout = plan_layout(qbin.sections)           # compute sizes/offsets
+  hdr = build_header(layout)
+  hdr.crc = crc32c(hdr[0:0x14])                 # CRC over 0x00..0x13
+  buf = [hdr, build_table(layout)]
+  for sec in layout.sections_in_order:
+    payload = encode_section(sec)
+    if sec.flags.compressed:
+      payload = compress(payload, alg)
+    if sec.flags.checksummed:
+      payload += trailer_crc(payload)
+    buf.append(align8(payload))
+  return concat(buf)
+</code></pre>
+<h3 id="53-public-api-surfaces">5.3 Public API Surfaces</h3>
+<p>C++:</p>
+<pre><code>class QbinReader {
+ public:
+  static QbinFile read(std::span&lt;const uint8_t&gt; bytes);
+};
+
+class QbinWriter {
+ public:
+  static std::vector&lt;uint8_t&gt; write(const QbinFile&amp; f);
+};
+</code></pre>
+<p>C ABI (for bindings):</p>
+<pre><code>int qbin_read(const uint8_t* data, size_t len, qbin_file_t** out);
+int qbin_write(const qbin_file_t* in, uint8_t** out, size_t* out_len);
+void qbin_free(void* p);
+</code></pre>
+<p>Python:</p>
+<pre><code>import qbin
+f = qbin.read(b)
+b = qbin.write(f)
+</code></pre>
+<hr />
+<h2 id="6-instruction-encoding-summary">6) Instruction Encoding (summary)</h2>
+<p>Instruction = <code>opcode (u8)</code> + <code>operand_mask (u8)</code> + operands.<br />
+Operand mask bits:</p>
+<pre><code>0: a (varint)   1: b (varint)   2: c (varint)
+3: angle_0      4: angle_1      5: angle_2
+6: param_ref    7: aux_u32
+</code></pre>
+<p>Angle slot: <code>u8 tag (0=f32, 1=param_ref) + payload</code>.</p>
+<p>Rationale:
+- Constant-size opcode header; variable-size operands for compactness.
+- Varint for indices; f32 for angles; param_ref enables symbolic reuse.</p>
+<hr />
+<h2 id="7-names-metadata-and-fidelity">7) Names, Metadata, and Fidelity</h2>
+<ul>
+<li>STRS: deduplication of names/keys; referenced via IDs.</li>
+<li>META: binary KV, avoids JSON parser; used for provenance and target info.</li>
+<li>QUBS/BITS: preserve register naming and sizes for round-trip readability.</li>
+<li>PARS: stable parameter IDs and kinds; literal vs ref recorded at use-sites.</li>
+<li>DEBG: optional file/line/column mapping for decompilers and IDEs.</li>
+</ul>
+<p>Round-trip policies are documented in <code>spec/qbin-spec.md</code> section 13.</p>
+<hr />
+<h2 id="8-security-and-robustness">8) Security and Robustness</h2>
+<ul>
+<li>All inputs untrusted: validate ranges, counts, overlaps, alignment.</li>
+<li>Compression bombs: cap <code>raw_size</code> and compression ratios.</li>
+<li>Checksums and signatures: optional integrity and authenticity.</li>
+<li>EXTS and GATE bodies: never execute; only parse/validate unless explicitly enabled.</li>
+<li>Bounded recursion for IF/ENDIF nesting when decoding.</li>
+</ul>
+<hr />
+<h2 id="9-performance-considerations">9) Performance Considerations</h2>
+<ul>
+<li>Streaming decode of INST to avoid large intermediate ASTs.</li>
+<li>Use contiguous buffers and span/slice views (no copies) in readers.</li>
+<li>Prefer varint for indices and sparse IDs; normalize index order.</li>
+<li>Optional zstd compression for large STRS/DEBG sections.</li>
+<li>Align sections to 8 bytes to help mmap and DMA-friendly IO.</li>
+</ul>
+<p>Target outcomes (indicative):
+- 5x–20x smaller than QASM for long gate streams.
+- O(1) per-instruction decode; linear scan with no tokenization.</p>
+<hr />
+<h2 id="10-testing-strategy">10) Testing Strategy</h2>
+<ul>
+<li>Unit tests: per-section encode/decode.</li>
+<li>Round-trip tests: QASM -&gt; QBIN -&gt; QASM equivalence (semantic).</li>
+<li>Conformance suite: canonical <code>.qbin</code> fixtures with hashes.</li>
+<li>Fuzzing: structure-aware fuzzers for <code>reader</code> entry points.</li>
+<li>Cross-language parity: C++ vs Python decoders read same fixtures.</li>
+</ul>
+<p>CI:
+- Build on Linux/macOS/Windows.
+- Run ctest + pytest + fuzz smoke.
+- Artifacts: reference <code>.qbin</code> fixtures and coverage reports.</p>
+<hr />
+<h2 id="11-extension-mechanism">11) Extension Mechanism</h2>
+<p>EXTS section registers:
+- New opcodes and operand schemas.
+- Expression DAGs used by PARS (symbolic math).
+- Vector operands (qubit lists), multi-control gates.</p>
+<p>Rules:
+- Unknown sections must be skippable.
+- Unknown opcodes: report <code>ERR_UNSUPPORTED_OPCODE</code> unless EXTS map provided.
+- Minor versions cannot break existing encodings.</p>
+<hr />
+<h2 id="12-integration-examples">12) Integration Examples</h2>
+<ul>
+<li>CLI workflow:</li>
+</ul>
+<pre><code>qbin-compile program.qasm -o program.qbin --meta target=ibm_brisbane
+qbin-inspect program.qbin --inst
+qbin-decompile program.qbin -o program_roundtrip.qasm --qasm 3
+</code></pre>
+<ul>
+<li>IDE integration (e.g., VS Code extension):</li>
+<li>Use Python binding to decode <code>.qbin</code> for quick previews.</li>
+<li>Map DEBG to source lines for inline annotations.</li>
+<li>Send <code>.qbin</code> over IPC instead of large QASM text for speed.</li>
+</ul>
+<hr />
+<h2 id="13-roadmap-excerpt">13) Roadmap (excerpt)</h2>
+<ul>
+<li>v1.0-draft freeze -&gt; conformance fixtures -&gt; reference reader/writer (C++)</li>
+<li>qbin-compile/decompile MVP -&gt; Python binding -&gt; Rust binding</li>
+<li>qbin-inspect GUI (optional) -&gt; integration with IDEs</li>
+<li>v1.1: EXTS registry, vector operands, richer conditionals</li>
+</ul>
+<p>Full roadmap in <code>docs/roadmap.md</code> (WIP).</p>
+<hr />
+<h2 id="14-glossary">14) Glossary</h2>
+<ul>
+<li>INST: Instruction stream section.</li>
+<li>STRS: String table.</li>
+<li>META: Metadata section.</li>
+<li>QUBS/BITS: Qubit/bit tables.</li>
+<li>PARS: Parameter table.</li>
+<li>GATE: Custom gate table.</li>
+<li>DEBG: Debug mapping.</li>
+<li>SIGN: Detached signature.</li>
+<li>EXTS: Extension registry.</li>
+</ul>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      <script id="__config" type="application/json">{"base": "..", "features": [], "search": "../assets/javascripts/workers/search.973d3a69.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../assets/javascripts/bundle.92b07e13.min.js"></script>
+      
+    
+  </body>
+</html>
