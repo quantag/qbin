@@ -1,0 +1,9 @@
+site_name: QBIN
+theme:
+  name: material
+
+nav:
+  - Home: index.md
+  - Installation: install.md
+  - Usage: usage.md
+  - Architecture: architecture.md

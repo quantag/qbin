@@ -1,12 +1,14 @@
 {
   "version": 3,
   "cmakeMinimumRequired": {
-    "major": 3, "minor": 20, "patch": 0
+    "major": 3,
+    "minor": 20,
+    "patch": 0
   },
   "configurePresets": [
     {
       "name": "dev",
-      "displayName": "Dev (Release)",
+      "displayName": "Dev (Release, Linux)",
       "generator": "Unix Makefiles",
       "binaryDir": "build",
       "cacheVariables": {
@@ -16,9 +18,31 @@
     },
     {
       "name": "dev-debug",
-      "displayName": "Dev (Debug)",
+      "displayName": "Dev (Debug, Linux)",
       "generator": "Unix Makefiles",
       "binaryDir": "build-debug",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "QBIN_BUILD_TESTS": "ON"
+      }
+    },
+    {
+      "name": "win-msvc",
+      "displayName": "Windows MSVC (Release)",
+      "generator": "Visual Studio 17 2022",
+      "architecture": "x64",
+      "binaryDir": "build-win",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "QBIN_BUILD_TESTS": "ON"
+      }
+    },
+    {
+      "name": "win-msvc-debug",
+      "displayName": "Windows MSVC (Debug)",
+      "generator": "Visual Studio 17 2022",
+      "architecture": "x64",
+      "binaryDir": "build-win-debug",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Debug",
         "QBIN_BUILD_TESTS": "ON"
@@ -26,8 +50,22 @@
     }
   ],
   "buildPresets": [
-    { "name": "dev", "configurePreset": "dev" },
-    { "name": "dev-debug", "configurePreset": "dev-debug" }
+    {
+      "name": "dev",
+      "configurePreset": "dev"
+    },
+    {
+      "name": "dev-debug",
+      "configurePreset": "dev-debug"
+    },
+    {
+      "name": "win-msvc",
+      "configurePreset": "win-msvc"
+    },
+    {
+      "name": "win-msvc-debug",
+      "configurePreset": "win-msvc-debug"
+    }
   ],
   "testPresets": [
     {
@@ -38,6 +76,16 @@
     {
       "name": "dev-debug",
       "configurePreset": "dev-debug",
+      "output": { "outputOnFailure": true }
+    },
+    {
+      "name": "win-msvc",
+      "configurePreset": "win-msvc",
+      "output": { "outputOnFailure": true }
+    },
+    {
+      "name": "win-msvc-debug",
+      "configurePreset": "win-msvc-debug",
       "output": { "outputOnFailure": true }
     }
   ]
