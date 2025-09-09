@@ -100,22 +100,6 @@ round‑trip tests on Ubuntu for pushes and PRs. See **[.github/workflows/ci.yml
 
 ## Troubleshooting
 
-### “password authentication is not supported on git operations”
-GitHub disabled password over HTTPS. Use **SSH** or a **Personal Access Token** (HTTPS):
-
-**SSH (recommended):**
-```bash
-ssh-keygen -t ed25519 -C "you@example.com"
-eval "$(ssh-agent -s)"
-ssh-add ~/.ssh/id_ed25519
-cat ~/.ssh/id_ed25519.pub  # add to GitHub → Settings → SSH keys
-git remote set-url origin git@github.com:OWNER/REPO.git
-```
-
-**HTTPS + PAT:**
-Create a token (Developer settings → Personal access tokens), then when prompted:
-- Username: your GitHub username
-- Password: the **token**
 
 ### `bootstrap.sh` not executable after clone
 Either run with bash:
