@@ -1,8 +1,11 @@
 #include "qbin_compiler/qasm_frontend.hpp"
 #include "qbin_compiler/tools.hpp"
+#include "qbin_compiler/custom_gate.hpp"
 
-#include <map>
+#include <algorithm>
+#include <cctype>
 #include <regex>
+#include <sstream>
 #include <string>
 #include <string_view>
 #include <unordered_map>
@@ -10,9 +13,9 @@
 #include <vector>
 
 using namespace std;
+
 using qbin_compiler::util::to_lower_ascii;
 using qbin_compiler::util::trim;
-using qbin_compiler::util::split_commas;
 using qbin_compiler::util::find_matching_paren;
 using qbin_compiler::util::eval_expr;
 using qbin_compiler::util::vlog;
@@ -20,33 +23,72 @@ using qbin_compiler::util::vlog;
 namespace qbin_compiler {
     namespace frontend {
 
-        // ---------- IR emit helpers ----------
+
         static inline void emit_1q(vector<Instr>& out, Op op, int a) {
-            Instr i{}; i.op = op; i.a = a; out.push_back(i);
-        }
-        static inline void emit_2q(vector<Instr>& out, Op op, int a, int b) {
-            Instr i{}; i.op = op; i.a = a; i.b = b; out.push_back(i);
-        }
-        static inline void emit_angle(vector<Instr>& out, Op op, int a, double ang) {
-            Instr i{}; i.op = op; i.a = a; i.has_angle = true; i.angle = float(ang); out.push_back(i);
-        }
-        static inline void emit_measure(vector<Instr>& out, int q, int c) {
-            Instr i{}; i.op = Op::MEASURE; i.a = q; i.has_aux = true; i.aux = (uint32_t)c; out.push_back(i);
+            Instr i{};
+            i.op = op;
+            i.a = a;
+            out.push_back(i);
         }
 
-        // ---------- IF matcher ----------
-        // Matches: if (CREG[idx] == imm) { <one statement>; }
-        //          if (CREG[idx] != imm) { <one statement>; }
-        // Semicolon after '}' is optional.
+        static inline void emit_2q(vector<Instr>& out, Op op, int a, int b) {
+            Instr i{};
+            i.op = op;
+            i.a = a;
+            i.b = b;
+            out.push_back(i);
+        }
+
+        static inline void emit_angle(vector<Instr>& out, Op op, int a, double ang) {
+            Instr i{};
+            i.op = op;
+            i.a = a;
+            i.has_angle = true;
+            i.angle = static_cast<float>(ang);
+            out.push_back(i);
+        }
+
+        static inline void emit_measure(vector<Instr>& out, int q, int c) {
+            Instr i{};
+            i.op = Op::MEASURE;
+            i.a = q;
+            i.has_aux = true;
+            i.aux = static_cast<uint32_t>(c);
+            out.push_back(i);
+        }
+
+        // Split a comma-separated list respecting simple parentheses; returns trimmed items.
+        static vector<string> split_csv(const string& s) {
+            vector<string> out;
+            string cur;
+            int depth = 0;
+            for (size_t i = 0; i < s.size(); ++i) {
+                char ch = s[i];
+                if (ch == '(') { ++depth; cur.push_back(ch); }
+                else if (ch == ')') { --depth; cur.push_back(ch); }
+                else if (ch == ',' && depth == 0) {
+                    auto t = trim(cur);
+                    if (!t.empty()) out.push_back(string(t));
+                    cur.clear();
+                }
+                else {
+                    cur.push_back(ch);
+                }
+            }
+            auto t = trim(cur);
+            if (!t.empty()) out.push_back(string(t));
+            return out;
+        }
+
         static bool match_if_one_stmt(const std::string& line,
             std::string& creg_name,
             int& cidx,
             bool& is_eq,
             int& imm,
-            std::string& body_stmt)
-        {
+            std::string& body_stmt) {
+
             static const std::regex re(
-                R"(^\s*if\s*\(\s*([A-Za-z_][A-Za-z0-9_]*)\s*\[(\d+)\]\s*(==|!=)\s*([0-9]+)\s*\)\s*\{\s*(.*?)\s*\}\s*;?\s*$)",
+                R"(^\s*if\s*\(\s*([A-Za-z_][A-Za-z0-9_]*)\s*\[(\d+)\]\s*(==|!=)\s*([0-9]+)\s*\)\s*\{\s*([\s\S]*?)\s*\}\s*;?\s*$)",
                 std::regex::icase);
 
             std::smatch m;
@@ -59,513 +101,485 @@ namespace qbin_compiler {
             return true;
         }
 
-        // ---------- QASM2 gate definitions ----------
-        struct GateDef {
-            string name;                 // lower-case
-            vector<string> qformals;     // e.g., q0, q1
-            vector<string> pformals;     // e.g., theta, phi, lambda
-            vector<string> body;         // statements without trailing ';'
-        };
+        // ------------------------ The parser ------------------------
 
-        static string substitute_idents(const string& s, const unordered_map<string, string>& subs) {
-            string out; out.reserve(s.size());
-            for (size_t i = 0; i < s.size();) {
-                unsigned char ch = static_cast<unsigned char>(s[i]);
-                if (std::isalpha(ch) || s[i] == '_') {
-                    size_t j = i + 1;
-                    while (j < s.size()) {
-                        unsigned char cj = static_cast<unsigned char>(s[j]);
-                        if (std::isalnum(cj) || s[j] == '_' || s[j] == '[' || s[j] == ']') ++j;
-                        else break;
-                    }
-                    string tok = s.substr(i, j - i);
-                    string key = to_lower_ascii(tok);
-                    auto it = subs.find(key);
-                    out += (it != subs.end()) ? it->second : tok;
-                    i = j;
-                }
-                else {
-                    out += s[i++];
-                }
-            }
-            return out;
-        }
-
-        // Expand one statement into canonical primitives, logging along the way.
-        static void expand_stmt_recursive(const string& stmt_in,
-            const unordered_map<string, string>& subs,
-            const map<string, GateDef>& gates,
-            vector<string>& out_stmts,
-            bool verbose)
-        {
-            string s = trim(stmt_in);
-            if (s.empty()) return;
-
-            s = substitute_idents(s, subs);
-            string sl = to_lower_ascii(s);
-
-            // ignore barrier/reset
-            if (sl.rfind("barrier", 0) == 0) { vlog(verbose, "skip barrier"); return; }
-            if (sl.rfind("reset", 0) == 0) { vlog(verbose, "skip reset");   return; }
-
-            // U(theta,phi,lambda) q;
-            {
-                static regex reU(R"(^u\s*\(\s*([^,]+)\s*,\s*([^,]+)\s*,\s*([^)]+)\)\s+([A-Za-z_][A-Za-z0-9_\[\]]*)\s*;?$)", regex::icase);
-                smatch m;
-                if (regex_match(s, m, reU)) {
-                    double th = eval_expr(m[1].str());
-                    double ph = eval_expr(m[2].str());
-                    double la = eval_expr(m[3].str());
-                    string q = m[4].str();
-                    out_stmts.push_back("rz(" + to_string(ph) + ") " + q + ";");
-                    out_stmts.push_back("ry(" + to_string(th) + ") " + q + ";");
-                    out_stmts.push_back("rz(" + to_string(la) + ") " + q + ";");
-                    vlog(verbose, "expand U(...) on " + q + " -> rz,ry,rz");
-                    return;
-                }
-            }
-
-            // cx a,b;
-            {
-                static regex recx(R"(^cx\s+([A-Za-z_][A-Za-z0-9_\[\]]*)\s*,\s*([A-Za-z_][A-Za-z0-9_\[\]]*)\s*;?$)", regex::icase);
-                smatch m;
-                if (regex_match(s, m, recx)) {
-                    out_stmts.push_back("cx " + m[1].str() + ", " + m[2].str() + ";");
-                    vlog(verbose, "emit cx " + m[1].str() + "," + m[2].str());
-                    return;
-                }
-            }
-
-            // 1q with angle: rz/ry/rx/phase
-            {
-                static regex reang(R"(^\s*(rz|ry|rx|phase)\s*\(\s*([^)]+)\)\s+([A-Za-z_][A-Za-z0-9_\[\]]*)\s*;?$)", regex::icase);
-                smatch m;
-                if (regex_match(s, m, reang)) {
-                    out_stmts.push_back(m[1].str() + "(" + m[2].str() + ") " + m[3].str() + ";");
-                    vlog(verbose, "emit angle1 " + to_lower_ascii(m[1].str()) + " " + m[3].str());
-                    return;
-                }
-            }
-
-            // 1q no-angle
-            {
-                static regex re1q(R"(^\s*(x|y|z|h|s|sdg|t|tdg|sx|sxdg)\s+([A-Za-z_][A-Za-z0-9_\[\]]*)\s*;?$)", regex::icase);
-                smatch m;
-                if (regex_match(s, m, re1q)) {
-                    out_stmts.push_back(to_lower_ascii(m[1].str()) + " " + m[2].str() + ";");
-                    vlog(verbose, "emit 1q " + to_lower_ascii(m[1].str()) + " " + m[2].str());
-                    return;
-                }
-            }
-
-            // measure arrow or assignment
-            {
-                static regex rem1(R"(^\s*measure\s+([A-Za-z_][A-Za-z0-9_\[\]]*)\s*->\s*([A-Za-z_][A-Za-z0-9_\[\]]*)\s*;?$)", regex::icase);
-                static regex rem2(R"(^\s*([A-Za-z_][A-Za-z0-9_\[\]]*)\s*=\s*measure\s+([A-Za-z_][A-Za-z0-9_\[\]]*)\s*;?$)", regex::icase);
-                smatch m;
-                if (regex_match(s, m, rem1)) { out_stmts.push_back(m[2].str() + " = measure " + m[1].str() + ";"); vlog(verbose, "emit measure (arrow)"); return; }
-                if (regex_match(s, m, rem2)) { out_stmts.push_back(m[1].str() + " = measure " + m[2].str() + ";"); vlog(verbose, "emit measure (assign)"); return; }
-            }
-
-            // Robust nested gate call: NAME[(params)] qargs;
-            {
-                static regex re_name_only(R"(^\s*([A-Za-z_][A-Za-z0-9_]*)\s*(.*?);?\s*$)");
-                smatch m;
-                if (regex_match(s, m, re_name_only)) {
-                    string name = to_lower_ascii(trim(m[1].str()));
-                    auto it = gates.find(name);
-                    if (it != gates.end()) {
-                        string rest = trim(m[2].str());
-
-                        // Extract "( ... )" at start if present
-                        string param_str, qubits_str = rest;
-                        if (!rest.empty() && rest[0] == '(') {
-                            size_t close = find_matching_paren(rest, 0);
-                            if (close != string::npos) {
-                                param_str = rest.substr(1, close - 1);
-                                qubits_str = trim(rest.substr(close + 1));
-                            }
-                        }
-
-                        // Split qubits by comma
-                        vector<string> qargs = split_commas(qubits_str, /*respect_parens*/true);
-
-                        // Build substitutions
-                        unordered_map<string, string> subs2 = subs;
-
-                        // Map params if gate has formals
-                        if (!it->second.pformals.empty() && !param_str.empty()) {
-                            vector<string> pvals = split_commas(param_str, /*respect_parens*/true);
-                            for (size_t k = 0; k < it->second.pformals.size() && k < pvals.size(); ++k) {
-                                subs2[to_lower_ascii(it->second.pformals[k])] = pvals[k];
-                            }
-                        }
-
-                        // Map qubit formals
-                        for (size_t i2 = 0; i2 < it->second.qformals.size() && i2 < qargs.size(); ++i2) {
-                            subs2[to_lower_ascii(it->second.qformals[i2])] = qargs[i2];
-                        }
-
-                        vlog(verbose, string("expand call: ") + name +
-                            " p=" + to_string(it->second.pformals.size()) +
-                            " q=" + to_string(it->second.qformals.size()) +
-                            " with args q=" + to_string(qargs.size()));
-
-                        // Recurse into body
-                        for (const auto& st : it->second.body) {
-                            expand_stmt_recursive(st, subs2, gates, out_stmts, verbose);
-                        }
-                        return;
-                    }
-                    else {
-                        vlog(verbose, string("unknown gate call: ") + name + " (no def)");
-                    }
-                }
-            }
-
-            // Pass-through (keep as-is, ensure it ends with ';')
-            out_stmts.push_back(s.back() == ';' ? s : s + ";");
-            vlog(verbose, "pass-through stmt");
-        }
-
-        // ---------- main parser ----------
         Program parse_qasm_subset(std::string_view text, bool verbose) {
             string src(text);
+            GateRegistry gate_registry;
 
-            // Normalize lines and strip // comments.
+
             vector<string> raw_lines;
-            raw_lines.reserve(src.size() / 16 + 8);
             {
-                string cur; cur.reserve(256);
+                string cur;
+                bool in_block_comment = false;
                 for (size_t i = 0; i < src.size(); ++i) {
                     char c = src[i];
-                    if (c == '\r') continue;
-                    if (c == '/' && i + 1 < src.size() && src[i + 1] == '/') {
+                    char n = (i + 1 < src.size()) ? src[i + 1] : '\0';
+
+                    if (!in_block_comment && c == '/' && n == '/') {
                         while (i < src.size() && src[i] != '\n') ++i;
+                        if (i < src.size() && src[i] == '\n') {
+                            raw_lines.push_back(cur);
+                            cur.clear();
+                        }
+                        continue;
                     }
-                    if (i < src.size() && src[i] == '\n') { raw_lines.push_back(cur); cur.clear(); }
-                    else if (i < src.size()) { cur.push_back(src[i]); }
+
+                    if (!in_block_comment && c == '/' && n == '*') {
+                        in_block_comment = true;
+                        ++i;
+                        continue;
+                    }
+
+                    if (in_block_comment && c == '*' && n == '/') {
+                        in_block_comment = false;
+                        ++i;
+                        continue;
+                    }
+
+                    if (in_block_comment) continue;
+
+                    if (c == '\r') continue;
+                    if (c == '\n') {
+                        raw_lines.push_back(cur);
+                        cur.clear();
+                    }
+                    else {
+                        cur.push_back(c);
+                    }
                 }
-                raw_lines.push_back(cur);
+                if (!cur.empty()) raw_lines.push_back(cur);
             }
 
-            // Reg tables
-            struct Reg { int offset = 0; int size = 0; };
-            map<string, Reg> qregs, cregs;
-            int q_total = 0, c_total = 0;
+            // ---- 2) Parse register declarations + custom gate definitions; collect the rest ----
+            // Registers: keep simple maps name (base, size).
+            unordered_map<string, pair<int, int>> qregs; // qubits
+            unordered_map<string, pair<int, int>> cregs; // classical bits
+            int q_base = 0, c_base = 0;
 
-            // Gate defs
-            map<string, GateDef> gates;
-
-            // First pass: collect regs, gate defs, and keep non-definition lines
             vector<string> nondef_lines;
+
             for (size_t li = 0; li < raw_lines.size(); ++li) {
                 string line = trim(raw_lines[li]);
                 if (line.empty()) continue;
                 string ll = to_lower_ascii(line);
 
-                if (ll.rfind("openqasm", 0) == 0) { vlog(verbose, "header: " + line); continue; }
-                if (ll.rfind("include", 0) == 0) { vlog(verbose, "include: " + line); continue; }
+                // OPENQASM header or includes ignore for now
+                if (ll.rfind("openqasm", 0) == 0) continue;
+                if (ll.rfind("include", 0) == 0)  continue;
 
-                // qreg / creg
+                // qubit[N] name;  or bit[N] name;
                 {
-                    static regex req(R"(^qreg\s+([A-Za-z_][A-Za-z0-9_]*)\[(\d+)\]\s*;?$)", regex::icase);
+                    static regex rq(R"(^\s*qubit\s*\[\s*(\d+)\s*\]\s*([A-Za-z_]\w*)\s*;?\s*$)", regex::icase);
+                    static regex rc(R"(^\s*bit\s*\[\s*(\d+)\s*\]\s*([A-Za-z_]\w*)\s*;?\s*$)", regex::icase);
                     smatch m;
-                    if (regex_match(line, m, req)) {
-                        string name = to_lower_ascii(m[1].str());
-                        int n = stoi(m[2].str());
-                        qregs[name] = Reg{ q_total, n }; q_total += n;
-                        vlog(verbose, "qreg " + name + "[" + to_string(n) + "] -> offset " + to_string(qregs[name].offset));
+                    if (regex_match(line, m, rq)) {
+                        int sz = stoi(m[1].str());
+                        string nm = to_lower_ascii(m[2].str());
+                        qregs[nm] = { q_base, sz };
+                        q_base += sz;
                         continue;
                     }
-                }
-                {
-                    static regex rec(R"(^creg\s+([A-Za-z_][A-Za-z0-9_]*)\[(\d+)\]\s*;?$)", regex::icase);
-                    smatch m;
-                    if (regex_match(line, m, rec)) {
-                        string name = to_lower_ascii(m[1].str());
-                        int n = stoi(m[2].str());
-                        cregs[name] = Reg{ c_total, n }; c_total += n;
-                        vlog(verbose, "creg " + name + "[" + to_string(n) + "] -> offset " + to_string(cregs[name].offset));
+                    if (regex_match(line, m, rc)) {
+                        int sz = stoi(m[1].str());
+                        string nm = to_lower_ascii(m[2].str());
+                        cregs[nm] = { c_base, sz };
+                        c_base += sz;
                         continue;
                     }
                 }
 
-                // Gate definition: handle braces on same line and across lines
+                // Custom gate definition:
+                // We accept both "gate name a,b,c { .. }" and multi-line with nested braces.
                 if (ll.rfind("gate ", 0) == 0) {
-                    string header = line;
-                    while (header.find('{') == string::npos && li + 1 < raw_lines.size()) {
-                        header += " " + trim(raw_lines[++li]);
+                    // Accumulate until matching '}' that closes the first '{' we encounter.
+                    string accum = line;
+                    // If there's no '{' on this line, pull next lines until we see one.
+                    while (accum.find('{') == string::npos && li + 1 < raw_lines.size()) {
+                        accum.push_back(' ');
+                        accum += trim(raw_lines[++li]);
                     }
-                    size_t brace_pos = header.find('{');
-                    if (brace_pos == string::npos) continue;
 
-                    // Parse head
-                    static regex rehead(R"(^gate\s+([A-Za-z_][A-Za-z0-9_]*)\s*(\(([^)]*)\))?\s+(.+)$)", regex::icase);
+                    size_t brace_pos = accum.find('{');
+                    if (brace_pos == string::npos) {
+                        vlog(verbose, "Malformed gate header (no '{'): " + accum);
+                        continue;
+                    }
+
+                    // Parse the gate header: "gate NAME <maybe params> <maybe args> {"
+                    // We keep it simple and collect everything between 'gate NAME' and '{'
+                    string head = trim(accum.substr(0, brace_pos));
+                    static regex rehead(R"(^\s*gate\s+([A-Za-z_]\w*)\s+(.+?)\s*$)", regex::icase);
                     smatch mh;
-                    string head_part = header.substr(0, brace_pos);
-                    if (!regex_match(head_part, mh, rehead)) continue;
-
-                    GateDef gd;
-                    gd.name = to_lower_ascii(trim(mh[1].str()));
-                    string params = mh[3].str();
-                    string qargs = trim(mh[4].str());
-
-                    if (!params.empty()) {
-                        for (auto& t : split_commas(params, /*respect_parens*/false)) gd.pformals.push_back(t);
-                    }
-                    if (!qargs.empty()) {
-                        for (auto& t : split_commas(qargs, /*respect_parens*/false)) gd.qformals.push_back(t);
+                    if (!regex_match(head, mh, rehead)) {
+                        vlog(verbose, "Failed to parse gate header: " + head);
+                        // try to continue scanning to close braces anyway
                     }
 
-                    // Collect body from remainder of header line and following lines
+                    string gname;
+                    vector<string> formals; // we unify params + qubit formals here (name-level substitution)
+                    if (mh.size() >= 3) {
+                        gname = to_lower_ascii(trim(mh[1].str()));
+                        string tail = trim(mh[2].str());
+                        // tail can be "a,b,c" or "(theta,phi) a,b" we flatten everything separated by spaces+commas
+                        // First, if there is a ')', split around it to extract "(...)" then the rest.
+                        size_t rp = tail.find(')');
+                        if (tail.size() && tail[0] == '(' && rp != string::npos) {
+                            string plist = tail.substr(1, rp - 1);
+                            auto p = split_csv(plist);
+                            for (auto& t : p) {
+                                auto tt = trim(t);
+                                if (!tt.empty()) formals.push_back(string(tt));
+                            }
+                            string rest = trim(tail.substr(rp + 1));
+                            if (!rest.empty()) {
+                                auto q = split_csv(rest);
+                                for (auto& t : q) {
+                                    auto tt = trim(t);
+                                    if (!tt.empty()) formals.push_back(string(tt));
+                                }
+                            }
+                        }
+                        else {
+                            // no parameter list; just qubit names separated by commas
+                            auto q = split_csv(tail);
+                            for (auto& t : q) {
+                                auto tt = trim(t);
+                                if (!tt.empty()) formals.push_back(string(tt));
+                            }
+                        }
+                    }
+
+                    // Now collect body, starting AFTER the first '{' we've found
                     string body;
                     int depth = 1;
-                    for (size_t k = brace_pos + 1; k < header.size(); ++k) {
-                        char ch = header[k];
+                    for (size_t k = brace_pos + 1; k < accum.size(); ++k) {
+                        char ch = accum[k];
                         if (ch == '{') { ++depth; continue; }
-                        if (ch == '}') { --depth; if (depth == 0) break; else continue; }
+                        if (ch == '}') { --depth; if (depth == 0) goto BODY_DONE_ACCUM; }
                         body.push_back(ch);
                     }
+                BODY_DONE_ACCUM:;
+
                     while (depth > 0 && li + 1 < raw_lines.size()) {
                         string nxt = raw_lines[++li];
-                        for (size_t k = 0; k < nxt.size(); ++k) {
-                            char ch = nxt[k];
+                        for (char ch : nxt) {
                             if (ch == '{') { ++depth; continue; }
-                            if (ch == '}') { --depth; if (depth == 0) { continue; } }
-                            if (depth >= 1) body.push_back(ch);
+                            if (ch == '}') { --depth; if (depth == 0) goto BODY_DONE_LOOP; }
+                            body.push_back(ch);
                         }
-                        if (depth >= 1) body.push_back('\n');
+                        body.push_back('\n');
                     }
+                BODY_DONE_LOOP:;
 
-                    // Split body by ';' respecting parentheses
+                    // Split body on semicolons outside parentheses
+                    vector<string> body_lines;
                     {
-                        size_t p = 0, last = 0; int depthP = 0;
+                        size_t p = 0, last = 0; int d = 0;
                         while (p <= body.size()) {
                             bool at_end = (p == body.size());
                             char ch = at_end ? '\0' : body[p];
-                            if (!at_end && ch == '(') ++depthP;
-                            else if (!at_end && ch == ')') --depthP;
-                            if (at_end || (ch == ';' && depthP == 0)) {
+                            if (!at_end && ch == '(') ++d;
+                            else if (!at_end && ch == ')') --d;
+                            if (at_end || (ch == ';' && d == 0)) {
                                 string t = trim(string_view(body).substr(last, p - last));
-                                if (!t.empty()) gd.body.push_back(t);
+                                if (!t.empty()) body_lines.push_back(string(t) + ";");
                                 last = p + 1;
                             }
                             ++p;
                         }
                     }
 
-                    vlog(verbose, "gate def: " + gd.name +
-                        " p=" + to_string(gd.pformals.size()) +
-                        " q=" + to_string(gd.qformals.size()) +
-                        " stmts=" + to_string(gd.body.size()));
-                    gates[gd.name] = std::move(gd);
+                    // Register the gate
+                    if (!gname.empty()) {
+                        CustomGate g(gname, formals, body_lines);
+                        gate_registry.addGate(g);
+                        vlog(verbose, "Registered custom gate: " + gname +
+                            " (params=" + to_string(formals.size()) +
+                            ", body=" + to_string(body_lines.size()) + ")");
+                    }
                     continue;
                 }
 
+                // Any other line goes to nondef_lines for later canonical processing
                 nondef_lines.push_back(line);
             }
 
-            Program prog;
-            prog.max_qubit = q_total - 1;
-            prog.max_bit = c_total - 1;
+            // ---- 3) Helpers to resolve indices like q[3], c[1] into absolute indices ----
 
-            auto resolve_qubit = [&](const string& token)->int {
-                static regex r(R"(^([A-Za-z_][A-Za-z0-9_]*)\[(\d+)\]$)");
+            auto resolve_qubit = [&](const string& token) -> int {
+                // token is expected like: name[index]
+                static regex ri(R"(^\s*([A-Za-z_]\w*)\s*\[\s*(\d+)\s*\]\s*$)");
                 smatch m;
-                if (!regex_match(token, m, r)) return -1;
-                string reg = to_lower_ascii(m[1].str());
+                if (!regex_match(token, m, ri)) return -1;
+                string nm = to_lower_ascii(m[1].str());
                 int idx = stoi(m[2].str());
-                auto it = qregs.find(reg); if (it == qregs.end()) return -1;
-                return it->second.offset + idx;
-                };
-            auto resolve_bit = [&](const string& token)->int {
-                static regex r(R"(^([A-Za-z_][A-Za-z0-9_]*)\[(\d+)\]$)");
-                smatch m;
-                if (!regex_match(token, m, r)) return -1;
-                string reg = to_lower_ascii(m[1].str());
-                int idx = stoi(m[2].str());
-                auto it = cregs.find(reg); if (it == cregs.end()) return -1;
-                return it->second.offset + idx;
+                auto it = qregs.find(nm);
+                if (it == qregs.end()) return -1;
+                int base = it->second.first, sz = it->second.second;
+                if (idx < 0 || idx >= sz) return -1;
+                return base + idx;
                 };
 
-            // Second pass: expand and emit
+            auto resolve_cbit = [&](const string& token) -> int {
+                static regex ri(R"(^\s*([A-Za-z_]\w*)\s*\[\s*(\d+)\s*\]\s*$)");
+                smatch m;
+                if (!regex_match(token, m, ri)) return -1;
+                string nm = to_lower_ascii(m[1].str());
+                int idx = stoi(m[2].str());
+                auto it = cregs.find(nm);
+                if (it == cregs.end()) return -1;
+                int base = it->second.first, sz = it->second.second;
+                if (idx < 0 || idx >= sz) return -1;
+                return base + idx;
+                };
+
+            // ---- 4) Canonical expansion: expand user statements into primitive strings ----
+            function<void(const string&,
+                const unordered_map<string, string>&,
+                vector<string>&)> expand_stmt_recursive;
+
+            expand_stmt_recursive = [&](const string& stmt_in,
+                const unordered_map<string, string>& subs,
+                vector<string>& out_stmts) {
+                    string s = trim(stmt_in);
+                    if (s.empty()) return;
+                    string sl = to_lower_ascii(s);
+
+                    // normalize trailing ';'
+                    auto ensure_semi = [](const string& t) {
+                        if (!t.empty() && t.back() == ';') return t;
+                        string r = t; r.push_back(';'); return r;
+                        };
+
+                    // ignore barrier/reset
+                    if (sl.rfind("barrier", 0) == 0) { vlog(verbose, "skip barrier"); return; }
+                    if (sl.rfind("reset", 0) == 0) { vlog(verbose, "skip reset");   return; }
+
+                    // measure: "measure q[i]  c[j];" OR "c[j] = measure q[i];"
+                    {
+                        static regex rem1(R"(^\s*measure\s+(.+?)\s*->\s*(.+?)\s*;?$)", regex::icase);
+                        static regex rem2(R"(^\s*(.+?)\s*=\s*measure\s+(.+?)\s*;?$)", regex::icase);
+                        smatch m;
+                        if (regex_match(s, m, rem1)) {
+                            string q = trim(m[1].str());
+                            string c = trim(m[2].str());
+                            out_stmts.push_back(ensure_semi(c + " = measure " + q));
+                            return;
+                        }
+                        if (regex_match(s, m, rem2)) {
+                            out_stmts.push_back(ensure_semi(trim(m[1].str()) + " = measure " + trim(m[2].str())));
+                            return;
+                        }
+                    }
+
+                    // two-qubit: cx/cz/swap  ARG, ARG;
+                    {
+                        static regex r2(R"(^\s*(cx|cz|swap)\s+(.+?)\s*,\s*(.+?)\s*;?$)", regex::icase);
+                        smatch m;
+                        if (regex_match(s, m, r2)) {
+                            string op = to_lower_ascii(m[1].str());
+                            string a = trim(m[2].str());
+                            string b = trim(m[3].str());
+                            out_stmts.push_back(ensure_semi(op + " " + a + ", " + b));
+                            return;
+                        }
+                    }
+
+                    // one-qubit non-param: h/x/y/z/s/sdg/t/tdg/sx/sxdg q[i];
+                    {
+                        static regex r1(R"(^\s*(h|x|y|z|s|sdg|t|tdg|sx|sxdg)\s+(.+?)\s*;?$)", regex::icase);
+                        smatch m;
+                        if (regex_match(s, m, r1)) {
+                            string op = to_lower_ascii(m[1].str());
+                            string a = trim(m[2].str());
+                            out_stmts.push_back(ensure_semi(op + " " + a));
+                            return;
+                        }
+                    }
+
+                    // param gates: rx/ry/rz/phase(angle) q[i];
+                    {
+                        static regex rp(R"(^\s*(rx|ry|rz|phase)\s*\(\s*(.+?)\s*\)\s+(.+?)\s*;?$)", regex::icase);
+                        smatch m;
+                        if (regex_match(s, m, rp)) {
+                            string op = to_lower_ascii(m[1].str());
+                            string expr = trim(m[2].str());
+                            string a = trim(m[3].str());
+                            // keep expression as-is for now (eval in emit stage)
+                            out_stmts.push_back(ensure_semi(op + "(" + expr + ") " + a));
+                            return;
+                        }
+                    }
+
+                    // custom gate call: NAME args;
+                    {
+                        static regex rcall(R"(^\s*([A-Za-z_]\w*)\s+(.+?)\s*;?$)");
+                        smatch m;
+                        if (regex_match(s, m, rcall)) {
+                            string name = to_lower_ascii(trim(m[1].str()));
+                            string rest = trim(m[2].str());
+                            if (gate_registry.hasGate(name)) {
+                                vector<string> args = split_csv(rest);
+                                auto expanded = gate_registry.getGate(name).expand(args);
+                                for (auto& e : expanded) {
+                                    expand_stmt_recursive(e, subs, out_stmts);
+                                }
+                                return;
+                            }
+                        }
+                    }
+
+                    // fallback: pass-through (kept as canonical line)
+                    out_stmts.push_back(ensure_semi(s));
+                };
+
+            // ---- 5) Expand to canonical sequence (strings) ----
             vector<string> canonical;
-            canonical.reserve(nondef_lines.size() * 2);
-
-            // Small helper to emit a single canonical statement string directly to IR.
-            auto emit_from_stmt = [&](const std::string& st)->bool {
-                smatch m;
-                // measure
-                {
-                    static regex r(R"(^([A-Za-z_][A-Za-z0-9_\[\]]*)\s*=\s*measure\s+([A-Za-z_][A-Za-z0-9_\[\]]*)\s*;?$)", regex::icase);
-                    if (regex_match(st, m, r)) {
-                        int q = resolve_qubit(m[2].str());
-                        int c = resolve_bit(m[1].str());
-                        if (q >= 0 && c >= 0) { emit_measure(prog.code, q, c); return true; }
-                        vlog(verbose, "measure resolve failed: " + st);
-                        return true; // consumed
-                    }
-                }
-                // cx
-                {
-                    static regex r(R"(^cx\s+([A-Za-z_][A-Za-z0-9_\[\]]*)\s*,\s*([A-Za-z_][A-Za-z0-9_\[\]]*)\s*;?$)", regex::icase);
-                    if (regex_match(st, m, r)) {
-                        int a = resolve_qubit(m[1].str());
-                        int b = resolve_qubit(m[2].str());
-                        if (a >= 0 && b >= 0) { emit_2q(prog.code, Op::CX, a, b); return true; }
-                        vlog(verbose, "cx resolve failed: " + st);
-                        return true;
-                    }
-                }
-                // 1q with angle
-                {
-                    static regex r(R"(^\s*(rz|ry|rx|phase)\s*\(\s*([^)]+)\)\s+([A-Za-z_][A-Za-z0-9_\[\]]*)\s*;?$)", regex::icase);
-                    if (regex_match(st, m, r)) {
-                        double ang = eval_expr(m[2].str());
-                        int a = resolve_qubit(m[3].str());
-                        if (a >= 0) {
-                            string g = to_lower_ascii(m[1].str());
-                            Op op = Op::RZ;
-                            if (g == "rz")    op = Op::RZ;
-                            else if (g == "ry")    op = Op::RY;
-                            else if (g == "rx")    op = Op::RX;
-                            else                   op = Op::PHASE;
-                            emit_angle(prog.code, op, a, ang);
-                        }
-                        else {
-                            vlog(verbose, "1q angle resolve failed: " + st);
-                        }
-                        return true;
-                    }
-                }
-                // 1q no-angle
-                {
-                    static regex r(R"(^\s*(x|y|z|h|s|sdg|t|tdg|sx|sxdg)\s+([A-Za-z_][A-Za-z0-9_\[\]]*)\s*;?$)", regex::icase);
-                    if (regex_match(st, m, r)) {
-                        int a = resolve_qubit(m[2].str());
-                        if (a >= 0) {
-                            string g = to_lower_ascii(m[1].str());
-                            Op op = Op::X;
-                            if (g == "x")   op = Op::X;
-                            else if (g == "y")   op = Op::Y;
-                            else if (g == "z")   op = Op::Z;
-                            else if (g == "h")   op = Op::H;
-                            else if (g == "s")   op = Op::S;
-                            else if (g == "sdg") op = Op::SDG;
-                            else if (g == "t")   op = Op::T;
-                            else if (g == "tdg") op = Op::TDG;
-                            else if (g == "sx")  op = Op::SX;
-                            else if (g == "sxdg")op = Op::SXDG;
-                            emit_1q(prog.code, op, a);
-                        }
-                        else {
-                            vlog(verbose, "1q resolve failed: " + st);
-                        }
-                        return true;
-                    }
-                }
-                // ignore barrier/reset
-                {
-                    static regex rb(R"(^\s*(barrier|reset)\b)", regex::icase);
-                    if (regex_search(st, rb)) return true;
-                }
-                return false; // not recognized; caller may log "ignored"
-                };
-
-            for (const auto& line : nondef_lines) {
-                string s = trim(line);
-                if (s.empty()) continue;
-
-                // QASM 3 style decls: qubit[N] name; bit[M] name;
-                {
-                    static regex rq(R"(^qubit\s*\[(\d+)\]\s*([A-Za-z_][A-Za-z0-9_]*)\s*;?$)", regex::icase);
-                    smatch m;
-                    if (regex_match(s, m, rq)) {
-                        string name = to_lower_ascii(m[2].str()); int n = stoi(m[1].str());
-                        if (!qregs.count(name)) { qregs[name] = { q_total, n }; q_total += n; prog.max_qubit = q_total - 1; }
-                        vlog(verbose, "qubit decl: " + name + "[" + to_string(n) + "]");
-                        continue;
-                    }
-                }
-                {
-                    static regex rb(R"(^bit\s*\[(\d+)\]\s*([A-Za-z_][A-Za-z0-9_]*)\s*;?$)", regex::icase);
-                    smatch m;
-                    if (regex_match(s, m, rb)) {
-                        string name = to_lower_ascii(m[2].str()); int n = stoi(m[1].str());
-                        if (!cregs.count(name)) { cregs[name] = { c_total, n }; c_total += n; prog.max_bit = c_total - 1; }
-                        vlog(verbose, "bit decl: " + name + "[" + to_string(n) + "]");
-                        continue;
-                    }
-                }
-
-                // measure arrow or assignment to canonical form
-                {
-                    static regex rm1(R"(^measure\s+([A-Za-z_][A-Za-z0-9_\[\]]*)\s*->\s*([A-Za-z_][A-Za-z0-9_\[\]]*)\s*;?$)", regex::icase);
-                    static regex rm2(R"(^([A-Za-z_][A-Za-z0-9_\[\]]*)\s*=\s*measure\s+([A-Za-z_][A-Za-z0-9_\[\]]*)\s*;?$)", regex::icase);
-                    smatch m;
-                    if (regex_match(s, m, rm1)) { canonical.push_back(m[2].str() + " = measure " + m[1].str() + ";"); vlog(verbose, "measure arrow -> canonical"); continue; }
-                    if (regex_match(s, m, rm2)) { canonical.push_back(m[1].str() + " = measure " + m[2].str() + ";"); vlog(verbose, "measure assign canonical"); continue; }
-                }
-
-
-
-                // Expand everything else to canonical primitives
-                vector<string> expanded;
-                expand_stmt_recursive(s, unordered_map<string, string>{}, gates, expanded, verbose);
-                if (expanded.empty()) vlog(verbose, "expansion produced 0 statements for: " + (s.size() > 64 ? s.substr(0, 64) : s));
-                canonical.insert(canonical.end(), expanded.begin(), expanded.end());
+            canonical.reserve(nondef_lines.size());
+            for (auto& s : nondef_lines) {
+                vector<string> tmp;
+                expand_stmt_recursive(s, {}, tmp);
+                canonical.insert(canonical.end(), tmp.begin(), tmp.end());
             }
 
-            vlog(verbose, "canonical statements: " + to_string(canonical.size()));
+            // ---- 6) Emit IR from canonical statements, preserving order (including IF) ----
+            Program prog;
 
-            // Emit IR for canonical (non-IF) statements
+            // emitter that handles primitive lines IR
+            auto emit_from_stmt = [&](const string& st) -> bool {
+                string s = trim(st);
+                if (s.empty()) return true;
+
+                {
+                    static regex rc(R"(^\s*(.+?)\s*=\s*measure\s+(.+?)\s*;?$)", regex::icase);
+                    smatch m;
+                    if (regex_match(s, m, rc)) {
+                        int q = resolve_qubit(trim(m[2].str()));
+                        int c = resolve_cbit(trim(m[1].str()));
+                        if (q < 0 || c < 0) { vlog(verbose, "measure resolve failed: " + s); return true; }
+                        emit_measure(prog.code, q, c);
+                        return true;
+                    }
+                }
+
+                // two-qubit
+                {
+                    static regex r2(R"(^\s*(cx|cz|swap)\s+(.+?)\s*,\s*(.+?)\s*;?$)", regex::icase);
+                    smatch m;
+                    if (regex_match(s, m, r2)) {
+                        int a = resolve_qubit(trim(m[2].str()));
+                        int b = resolve_qubit(trim(m[3].str()));
+                        if (a < 0 || b < 0) { vlog(verbose, "2q resolve failed: " + s); return true; }
+                        string op = to_lower_ascii(m[1].str());
+                        if (op == "cx")   emit_2q(prog.code, Op::CX, a, b);
+                        else if (op == "cz")   emit_2q(prog.code, Op::CZ, a, b);
+                        else if (op == "swap") emit_2q(prog.code, Op::SWAP, a, b);
+                        return true;
+                    }
+                }
+
+                // one-qubit non-param
+                {
+                    static regex r1(R"(^\s*(h|x|y|z|s|sdg|t|tdg|sx|sxdg)\s+(.+?)\s*;?$)", regex::icase);
+                    smatch m;
+                    if (regex_match(s, m, r1)) {
+                        int a = resolve_qubit(trim(m[2].str()));
+                        if (a < 0) { vlog(verbose, "1q resolve failed: " + s); return true; }
+                        string op = to_lower_ascii(m[1].str());
+                        if (op == "h")    emit_1q(prog.code, Op::H, a);
+                        else if (op == "x")    emit_1q(prog.code, Op::X, a);
+                        else if (op == "y")    emit_1q(prog.code, Op::Y, a);
+                        else if (op == "z")    emit_1q(prog.code, Op::Z, a);
+                        else if (op == "s")    emit_1q(prog.code, Op::S, a);
+                        else if (op == "sdg")  emit_1q(prog.code, Op::SDG, a);
+                        else if (op == "t")    emit_1q(prog.code, Op::T, a);
+                        else if (op == "tdg")  emit_1q(prog.code, Op::TDG, a);
+                        else if (op == "sx")   emit_1q(prog.code, Op::SX, a);
+                        else if (op == "sxdg") emit_1q(prog.code, Op::SXDG, a);
+                        return true;
+                    }
+                }
+
+                // param gates
+                {
+                    static regex rp(R"(^\s*(rx|ry|rz|phase)\s*\(\s*(.+?)\s*\)\s+(.+?)\s*;?$)", regex::icase);
+                    smatch m;
+                    if (regex_match(s, m, rp)) {
+                        string op = to_lower_ascii(m[1].str());
+                        string expr = trim(m[2].str());
+                        string aTok = trim(m[3].str());
+                        int a = resolve_qubit(aTok);
+                        if (a < 0) { vlog(verbose, "param resolve failed: " + s); return true; }
+
+                        double ang = 0.0;
+                        try { ang = eval_expr(expr); }
+                        catch (...) { vlog(verbose, "param eval failed, expr=" + expr); }
+
+                        if (op == "rx")      emit_angle(prog.code, Op::RX, a, ang);
+                        else if (op == "ry") emit_angle(prog.code, Op::RY, a, ang);
+                        else if (op == "rz") emit_angle(prog.code, Op::RZ, a, ang);
+                        else if (op == "phase") emit_angle(prog.code, Op::PHASE, a, ang);
+                        return true;
+                    }
+                }
+
+                return false; // not handled here
+                };
+
             for (const auto& st : canonical) {
                 if (emit_from_stmt(st)) continue;
 
-                // --- IF handling here to preserve order ---
-{
-    std::string creg_name, body;
-    int cidx = -1, imm = 0; bool is_eq = true;
-    if (match_if_one_stmt(st, creg_name, cidx, is_eq, imm, body)) {
-        int c_abs = resolve_bit(creg_name + "[" + std::to_string(cidx) + "]");
-        if (c_abs < 0) {
-            vlog(verbose, "IF cbit resolve failed: " + creg_name + "[" + std::to_string(cidx) + "]");
-            continue;
-        }
+                // IF handling here (order preserved)
+                {
+                    std::string creg_name, body;
+                    int cidx = -1, imm = 0; bool is_eq = true;
+                    if (match_if_one_stmt(st, creg_name, cidx, is_eq, imm, body)) {
+                        // resolve cbit absolute index
+                        int c_abs = -1;
+                        {
+                            std::ostringstream oss;
+                            oss << creg_name << "[" << cidx << "]";
+                            c_abs = resolve_cbit(oss.str());
+                        }
+                        if (c_abs < 0) {
+                            vlog(verbose, "IF cbit resolve failed: " + creg_name + "[" + to_string(cidx) + "]");
+                            continue;
+                        }
 
-        // Emit IF opcode
-        Instr ifi{};
-        ifi.op = is_eq ? Op::IF_EQ : Op::IF_NEQ;
-        ifi.has_aux = true;  ifi.aux = static_cast<uint32_t>(c_abs);
-        ifi.has_imm8 = true; ifi.imm8 = static_cast<uint8_t>(imm);
-        prog.code.push_back(ifi);
+                        Instr ifi{};
+                        ifi.op = is_eq ? Op::IF_EQ : Op::IF_NEQ;
+                        ifi.has_aux = true;  ifi.aux = static_cast<uint32_t>(c_abs);
+                        ifi.has_imm8 = true; ifi.imm8 = static_cast<uint8_t>(imm);
+                        prog.code.push_back(ifi);
 
-        // Expand IF body and emit
-        vector<string> expanded;
-        expand_stmt_recursive(body, unordered_map<string, string>{}, gates, expanded, verbose);
-        for (const auto& st2 : expanded) {
-            if (!emit_from_stmt(st2)) {
-                vlog(verbose, "ignored stmt in IF body: " + (st2.size() > 64 ? st2.substr(0, 64) : st2));
-            }
-        }
+                        // expand IF body and emit
+                        vector<string> expanded;
+                        expand_stmt_recursive(body, {}, expanded);
+                        for (const auto& st2 : expanded) {
+                            if (!emit_from_stmt(st2)) {
+                                // ignore barrier/reset etc
+                                static regex rb(R"(^\s*(barrier|reset)\b)", regex::icase);
+                                if (regex_search(st2, rb)) continue;
+                                vlog(verbose, "ignored stmt in IF body: " + (st2.size() > 64 ? st2.substr(0, 64) : st2));
+                            }
+                        }
 
-        // ENDIF
-        Instr endi{}; endi.op = Op::ENDIF;
-        prog.code.push_back(endi);
-        continue;
-    }
-}
+                        Instr endi{}; endi.op = Op::ENDIF;
+                        prog.code.push_back(endi);
+                        continue;
+                    }
+                }
 
-                // ignore barrier/reset
+                // ignore barrier/reset if they reach here (defensive)
                 {
                     static regex rb(R"(^\s*(barrier|reset)\b)", regex::icase);
                     if (regex_search(st, rb)) continue;
                 }
+
                 vlog(verbose, "ignored stmt: " + (st.size() > 64 ? st.substr(0, 64) : st));
             }
 
-            vlog(verbose, "emitted IR instructions: " + to_string(prog.code.size()));
             return prog;
         }
 
