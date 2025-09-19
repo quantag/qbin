@@ -16,10 +16,12 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 # ---- Sources ----
 set(QBIN_DECOMPILER_SOURCES
   src/main.cpp
+  src/tools.cpp
   src/decompiler.cpp
 )
 
 set(QBIN_DECOMPILER_HEADERS
+  include/qbin_decompiler/tools.hpp
   include/qbin_decompiler/decompiler.hpp
 )
 
