@@ -18,12 +18,14 @@ set(QBIN_COMPILER_SOURCES
   src/main.cpp
   src/compiler.cpp
   src/tools.cpp
+  src/custom_gate.cpp
   src/qasm_frontend.cpp
 )
 
 set(QBIN_COMPILER_HEADERS
   include/qbin_compiler/compiler.hpp
   include/qbin_compiler/qasm_frontend.hpp
+  include/qbin_compiler/custom_gate.hpp
   include/qbin_compiler/tools.hpp
 )
 
