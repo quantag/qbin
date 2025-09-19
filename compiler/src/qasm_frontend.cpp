@@ -15,7 +15,7 @@ using qbin_compiler::util::trim;
 using qbin_compiler::util::split_commas;
 using qbin_compiler::util::find_matching_paren;
 using qbin_compiler::util::eval_expr;
-using qbin_compiler::util::vlog >
+using qbin_compiler::util::vlog;
 
 namespace qbin_compiler {
     namespace frontend {
@@ -47,7 +47,7 @@ namespace qbin_compiler {
         {
             static const std::regex re(
                 R"(^\s*if\s*\(\s*([A-Za-z_][A-Za-z0-9_]*)\s*\[(\d+)\]\s*(==|!=)\s*([0-9]+)\s*\)\s*\{\s*(.*?)\s*\}\s*;?\s*$)",
-                std::regex::icase | std::regex::dotall);
+                std::regex::icase);
 
             std::smatch m;
             if (!std::regex_match(line, m, re)) return false;
@@ -508,44 +508,7 @@ namespace qbin_compiler {
                     if (regex_match(s, m, rm2)) { canonical.push_back(m[1].str() + " = measure " + m[2].str() + ";"); vlog(verbose, "measure assign canonical"); continue; }
                 }
 
-                // --- IF (creg[idx] ==|!= imm) { <one stmt> } ---
-                {
-                    std::string creg_name, body;
-                    int cidx = -1, imm = 0; bool is_eq = true;
-                    if (match_if_one_stmt(s, creg_name, cidx, is_eq, imm, body)) {
-                        // Resolve cbit absolute index
-                        int c_abs = resolve_bit(creg_name + "[" + std::to_string(cidx) + "]");
-                        if (c_abs < 0) {
-                            vlog(verbose, "IF cbit resolve failed: " + creg_name + "[" + std::to_string(cidx) + "]");
-                            // Skip emitting IF if we cannot resolve cbit
-                            continue;
-                        }
 
-                        // Emit IF opcode
-                        Instr ifi{};
-                        ifi.op = is_eq ? Op::IF_EQ : Op::IF_NEQ;
-                        ifi.has_aux = true;  ifi.aux = static_cast<uint32_t>(c_abs);
-                        ifi.has_imm8 = true; ifi.imm8 = static_cast<uint8_t>(imm);
-                        prog.code.push_back(ifi);
-
-                        // Expand body to canonical(s) and emit them now
-                        vector<string> expanded;
-                        expand_stmt_recursive(body, unordered_map<string, string>{}, gates, expanded, verbose);
-                        for (const auto& st : expanded) {
-                            if (!emit_from_stmt(st)) {
-                                vlog(verbose, "ignored stmt in IF body: " + (st.size() > 64 ? st.substr(0, 64) : st));
-                            }
-                        }
-
-                        // ENDIF
-                        Instr endi{}; endi.op = Op::ENDIF;
-                        prog.code.push_back(endi);
-
-                        vlog(verbose, string("IF parsed: ") + creg_name + "[" + to_string(cidx) + "] "
-                            + (is_eq ? "==" : "!=") + " " + to_string(imm) + " { " + body + " }");
-                        continue; // handled this line
-                    }
-                }
 
                 // Expand everything else to canonical primitives
                 vector<string> expanded;
@@ -559,6 +522,41 @@ namespace qbin_compiler {
             // Emit IR for canonical (non-IF) statements
             for (const auto& st : canonical) {
                 if (emit_from_stmt(st)) continue;
+
+                // --- IF handling here to preserve order ---
+{
+    std::string creg_name, body;
+    int cidx = -1, imm = 0; bool is_eq = true;
+    if (match_if_one_stmt(st, creg_name, cidx, is_eq, imm, body)) {
+        int c_abs = resolve_bit(creg_name + "[" + std::to_string(cidx) + "]");
+        if (c_abs < 0) {
+            vlog(verbose, "IF cbit resolve failed: " + creg_name + "[" + std::to_string(cidx) + "]");
+            continue;
+        }
+
+        // Emit IF opcode
+        Instr ifi{};
+        ifi.op = is_eq ? Op::IF_EQ : Op::IF_NEQ;
+        ifi.has_aux = true;  ifi.aux = static_cast<uint32_t>(c_abs);
+        ifi.has_imm8 = true; ifi.imm8 = static_cast<uint8_t>(imm);
+        prog.code.push_back(ifi);
+
+        // Expand IF body and emit
+        vector<string> expanded;
+        expand_stmt_recursive(body, unordered_map<string, string>{}, gates, expanded, verbose);
+        for (const auto& st2 : expanded) {
+            if (!emit_from_stmt(st2)) {
+                vlog(verbose, "ignored stmt in IF body: " + (st2.size() > 64 ? st2.substr(0, 64) : st2));
+            }
+        }
+
+        // ENDIF
+        Instr endi{}; endi.op = Op::ENDIF;
+        prog.code.push_back(endi);
+        continue;
+    }
+}
+
                 // ignore barrier/reset
                 {
                     static regex rb(R"(^\s*(barrier|reset)\b)", regex::icase);
