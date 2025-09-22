@@ -50,7 +50,7 @@ int main(int argc, char** argv) {
     // Ensure exactly one blank line at EOF (two trailing newlines)
     std::string out = qasm;
     // Normalize: strip any existing trailing newlines first
-    while (!out.empty() and out.back() == '\n') out.pop_back();
+    while (!out.empty() && out.back() == '\n') out.pop_back();
     // Then add exactly two newlines
     out.append("\n\n");
 

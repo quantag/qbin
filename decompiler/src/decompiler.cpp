@@ -261,7 +261,7 @@ namespace qbin_decompiler {
                 break;
             }
         }
-
+        q << "\n";
         qasm_out = q.str();
         return true;
     }

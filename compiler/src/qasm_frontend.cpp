@@ -1,6 +1,9 @@
 #include "qbin_compiler/qasm_frontend.hpp"
 #include "qbin_compiler/tools.hpp"
 #include "qbin_compiler/custom_gate.hpp"
+#include "qbin_compiler/qasm_lexer.hpp"
+#include "qbin_compiler/qasm_expander.hpp"
+#include "qbin_compiler/qasm_irbuilder.hpp"
 
 #include <algorithm>
 #include <cctype>
@@ -11,6 +14,10 @@
 #include <unordered_map>
 #include <utility>
 #include <vector>
+
+#ifdef WIN32
+#include <functional>
+#endif
 
 using namespace std;
 
@@ -80,76 +87,13 @@ namespace qbin_compiler {
             return out;
         }
 
-        static bool match_if_one_stmt(const std::string& line,
-            std::string& creg_name,
-            int& cidx,
-            bool& is_eq,
-            int& imm,
-            std::string& body_stmt) {
-
-            static const std::regex re(
-                R"(^\s*if\s*\(\s*([A-Za-z_][A-Za-z0-9_]*)\s*\[(\d+)\]\s*(==|!=)\s*([0-9]+)\s*\)\s*\{\s*([\s\S]*?)\s*\}\s*;?\s*$)",
-                std::regex::icase);
-
-            std::smatch m;
-            if (!std::regex_match(line, m, re)) return false;
-            creg_name = to_lower_ascii(m[1].str());
-            cidx = std::stoi(m[2].str());
-            is_eq = (m[3].str() == "==");
-            imm = std::stoi(m[4].str());
-            body_stmt = m[5].str();
-            return true;
-        }
-
         // ------------------------ The parser ------------------------
 
         Program parse_qasm_subset(std::string_view text, bool verbose) {
-            string src(text);
             GateRegistry gate_registry;
+            string src(text);
 
-
-            vector<string> raw_lines;
-            {
-                string cur;
-                bool in_block_comment = false;
-                for (size_t i = 0; i < src.size(); ++i) {
-                    char c = src[i];
-                    char n = (i + 1 < src.size()) ? src[i + 1] : '\0';
-
-                    if (!in_block_comment && c == '/' && n == '/') {
-                        while (i < src.size() && src[i] != '\n') ++i;
-                        if (i < src.size() && src[i] == '\n') {
-                            raw_lines.push_back(cur);
-                            cur.clear();
-                        }
-                        continue;
-                    }
-
-                    if (!in_block_comment && c == '/' && n == '*') {
-                        in_block_comment = true;
-                        ++i;
-                        continue;
-                    }
-
-                    if (in_block_comment && c == '*' && n == '/') {
-                        in_block_comment = false;
-                        ++i;
-                        continue;
-                    }
-
-                    if (in_block_comment) continue;
-
-                    if (c == '\r') continue;
-                    if (c == '\n') {
-                        raw_lines.push_back(cur);
-                        cur.clear();
-                    }
-                    else {
-                        cur.push_back(c);
-                    }
-                }
-                if (!cur.empty()) raw_lines.push_back(cur);
-            }
+            auto raw_lines = qbin_compiler::qasm::LineProcessor::preprocess(src);
 
             // ---- 2) Parse register declarations + custom gate definitions; collect the rest ----
             // Registers: keep simple maps name (base, size).
@@ -305,35 +249,6 @@ namespace qbin_compiler {
                 nondef_lines.push_back(line);
             }
 
-            // ---- 3) Helpers to resolve indices like q[3], c[1] into absolute indices ----
-
-            auto resolve_qubit = [&](const string& token) -> int {
-                // token is expected like: name[index]
-                static regex ri(R"(^\s*([A-Za-z_]\w*)\s*\[\s*(\d+)\s*\]\s*$)");
-                smatch m;
-                if (!regex_match(token, m, ri)) return -1;
-                string nm = to_lower_ascii(m[1].str());
-                int idx = stoi(m[2].str());
-                auto it = qregs.find(nm);
-                if (it == qregs.end()) return -1;
-                int base = it->second.first, sz = it->second.second;
-                if (idx < 0 || idx >= sz) return -1;
-                return base + idx;
-                };
-
-            auto resolve_cbit = [&](const string& token) -> int {
-                static regex ri(R"(^\s*([A-Za-z_]\w*)\s*\[\s*(\d+)\s*\]\s*$)");
-                smatch m;
-                if (!regex_match(token, m, ri)) return -1;
-                string nm = to_lower_ascii(m[1].str());
-                int idx = stoi(m[2].str());
-                auto it = cregs.find(nm);
-                if (it == cregs.end()) return -1;
-                int base = it->second.first, sz = it->second.second;
-                if (idx < 0 || idx >= sz) return -1;
-                return base + idx;
-                };
-
             // ---- 4) Canonical expansion: expand user statements into primitive strings ----
             function<void(const string&,
                 const unordered_map<string, string>&,
@@ -435,150 +350,10 @@ namespace qbin_compiler {
                 };
 
             // ---- 5) Expand to canonical sequence (strings) ----
-            vector<string> canonical;
-            canonical.reserve(nondef_lines.size());
-            for (auto& s : nondef_lines) {
-                vector<string> tmp;
-                expand_stmt_recursive(s, {}, tmp);
-                canonical.insert(canonical.end(), tmp.begin(), tmp.end());
-            }
+            auto canonical = StatementExpander::expand(nondef_lines, gate_registry, verbose);
 
             // ---- 6) Emit IR from canonical statements, preserving order (including IF) ----
-            Program prog;
-
-            // emitter that handles primitive lines IR
-            auto emit_from_stmt = [&](const string& st) -> bool {
-                string s = trim(st);
-                if (s.empty()) return true;
-
-                {
-                    static regex rc(R"(^\s*(.+?)\s*=\s*measure\s+(.+?)\s*;?$)", regex::icase);
-                    smatch m;
-                    if (regex_match(s, m, rc)) {
-                        int q = resolve_qubit(trim(m[2].str()));
-                        int c = resolve_cbit(trim(m[1].str()));
-                        if (q < 0 || c < 0) { vlog(verbose, "measure resolve failed: " + s); return true; }
-                        emit_measure(prog.code, q, c);
-                        return true;
-                    }
-                }
-
-                // two-qubit
-                {
-                    static regex r2(R"(^\s*(cx|cz|swap)\s+(.+?)\s*,\s*(.+?)\s*;?$)", regex::icase);
-                    smatch m;
-                    if (regex_match(s, m, r2)) {
-                        int a = resolve_qubit(trim(m[2].str()));
-                        int b = resolve_qubit(trim(m[3].str()));
-                        if (a < 0 || b < 0) { vlog(verbose, "2q resolve failed: " + s); return true; }
-                        string op = to_lower_ascii(m[1].str());
-                        if (op == "cx")   emit_2q(prog.code, Op::CX, a, b);
-                        else if (op == "cz")   emit_2q(prog.code, Op::CZ, a, b);
-                        else if (op == "swap") emit_2q(prog.code, Op::SWAP, a, b);
-                        return true;
-                    }
-                }
-
-                // one-qubit non-param
-                {
-                    static regex r1(R"(^\s*(h|x|y|z|s|sdg|t|tdg|sx|sxdg)\s+(.+?)\s*;?$)", regex::icase);
-                    smatch m;
-                    if (regex_match(s, m, r1)) {
-                        int a = resolve_qubit(trim(m[2].str()));
-                        if (a < 0) { vlog(verbose, "1q resolve failed: " + s); return true; }
-                        string op = to_lower_ascii(m[1].str());
-                        if (op == "h")    emit_1q(prog.code, Op::H, a);
-                        else if (op == "x")    emit_1q(prog.code, Op::X, a);
-                        else if (op == "y")    emit_1q(prog.code, Op::Y, a);
-                        else if (op == "z")    emit_1q(prog.code, Op::Z, a);
-                        else if (op == "s")    emit_1q(prog.code, Op::S, a);
-                        else if (op == "sdg")  emit_1q(prog.code, Op::SDG, a);
-                        else if (op == "t")    emit_1q(prog.code, Op::T, a);
-                        else if (op == "tdg")  emit_1q(prog.code, Op::TDG, a);
-                        else if (op == "sx")   emit_1q(prog.code, Op::SX, a);
-                        else if (op == "sxdg") emit_1q(prog.code, Op::SXDG, a);
-                        return true;
-                    }
-                }
-
-                // param gates
-                {
-                    static regex rp(R"(^\s*(rx|ry|rz|phase)\s*\(\s*(.+?)\s*\)\s+(.+?)\s*;?$)", regex::icase);
-                    smatch m;
-                    if (regex_match(s, m, rp)) {
-                        string op = to_lower_ascii(m[1].str());
-                        string expr = trim(m[2].str());
-                        string aTok = trim(m[3].str());
-                        int a = resolve_qubit(aTok);
-                        if (a < 0) { vlog(verbose, "param resolve failed: " + s); return true; }
-
-                        double ang = 0.0;
-                        try { ang = eval_expr(expr); }
-                        catch (...) { vlog(verbose, "param eval failed, expr=" + expr); }
-
-                        if (op == "rx")      emit_angle(prog.code, Op::RX, a, ang);
-                        else if (op == "ry") emit_angle(prog.code, Op::RY, a, ang);
-                        else if (op == "rz") emit_angle(prog.code, Op::RZ, a, ang);
-                        else if (op == "phase") emit_angle(prog.code, Op::PHASE, a, ang);
-                        return true;
-                    }
-                }
-
-                return false; // not handled here
-                };
-
-            for (const auto& st : canonical) {
-                if (emit_from_stmt(st)) continue;
-
-                // IF handling here (order preserved)
-                {
-                    std::string creg_name, body;
-                    int cidx = -1, imm = 0; bool is_eq = true;
-                    if (match_if_one_stmt(st, creg_name, cidx, is_eq, imm, body)) {
-                        // resolve cbit absolute index
-                        int c_abs = -1;
-                        {
-                            std::ostringstream oss;
-                            oss << creg_name << "[" << cidx << "]";
-                            c_abs = resolve_cbit(oss.str());
-                        }
-                        if (c_abs < 0) {
-                            vlog(verbose, "IF cbit resolve failed: " + creg_name + "[" + to_string(cidx) + "]");
-                            continue;
-                        }
-
-                        Instr ifi{};
-                        ifi.op = is_eq ? Op::IF_EQ : Op::IF_NEQ;
-                        ifi.has_aux = true;  ifi.aux = static_cast<uint32_t>(c_abs);
-                        ifi.has_imm8 = true; ifi.imm8 = static_cast<uint8_t>(imm);
-                        prog.code.push_back(ifi);
-
-                        // expand IF body and emit
-                        vector<string> expanded;
-                        expand_stmt_recursive(body, {}, expanded);
-                        for (const auto& st2 : expanded) {
-                            if (!emit_from_stmt(st2)) {
-                                // ignore barrier/reset etc
-                                static regex rb(R"(^\s*(barrier|reset)\b)", regex::icase);
-                                if (regex_search(st2, rb)) continue;
-                                vlog(verbose, "ignored stmt in IF body: " + (st2.size() > 64 ? st2.substr(0, 64) : st2));
-                            }
-                        }
-
-                        Instr endi{}; endi.op = Op::ENDIF;
-                        prog.code.push_back(endi);
-                        continue;
-                    }
-                }
-
-                // ignore barrier/reset if they reach here (defensive)
-                {
-                    static regex rb(R"(^\s*(barrier|reset)\b)", regex::icase);
-                    if (regex_search(st, rb)) continue;
-                }
-
-                vlog(verbose, "ignored stmt: " + (st.size() > 64 ? st.substr(0, 64) : st));
-            }
+            Program prog = IRBuilder::emit(canonical, qregs, cregs, verbose);
 
             return prog;
         }

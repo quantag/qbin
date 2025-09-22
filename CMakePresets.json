@@ -8,41 +8,45 @@
   "configurePresets": [
     {
       "name": "dev",
-      "displayName": "Dev (Release, Linux)",
+      "displayName": "Linux (Release, GCC)",
       "generator": "Unix Makefiles",
       "binaryDir": "build",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release",
+        "CMAKE_C_COMPILER": "gcc",
+        "CMAKE_CXX_COMPILER": "g++",
         "QBIN_BUILD_TESTS": "ON"
       }
     },
     {
       "name": "dev-debug",
-      "displayName": "Dev (Debug, Linux)",
+      "displayName": "Linux (Debug, GCC)",
       "generator": "Unix Makefiles",
       "binaryDir": "build-debug",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Debug",
+        "CMAKE_C_COMPILER": "gcc",
+        "CMAKE_CXX_COMPILER": "g++",
         "QBIN_BUILD_TESTS": "ON"
       }
     },
     {
-      "name": "win-msvc",
-      "displayName": "Windows MSVC (Release)",
+      "name": "win-release",
+      "displayName": "Windows (Release, VS2022)",
       "generator": "Visual Studio 17 2022",
       "architecture": "x64",
-      "binaryDir": "build-win",
+      "binaryDir": "build\\win-release",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release",
         "QBIN_BUILD_TESTS": "ON"
       }
     },
     {
-      "name": "win-msvc-debug",
-      "displayName": "Windows MSVC (Debug)",
+      "name": "win-debug",
+      "displayName": "Windows (Debug, VS2022)",
       "generator": "Visual Studio 17 2022",
       "architecture": "x64",
-      "binaryDir": "build-win-debug",
+      "binaryDir": "build\\win-debug",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Debug",
         "QBIN_BUILD_TESTS": "ON"
@@ -59,12 +63,12 @@
       "configurePreset": "dev-debug"
     },
     {
-      "name": "win-msvc",
-      "configurePreset": "win-msvc"
+      "name": "win-release",
+      "configurePreset": "win-release"
     },
     {
-      "name": "win-msvc-debug",
-      "configurePreset": "win-msvc-debug"
+      "name": "win-debug",
+      "configurePreset": "win-debug"
     }
   ],
   "testPresets": [
@@ -79,13 +83,13 @@
       "output": { "outputOnFailure": true }
     },
     {
-      "name": "win-msvc",
-      "configurePreset": "win-msvc",
+      "name": "win-release",
+      "configurePreset": "win-release",
       "output": { "outputOnFailure": true }
     },
     {
-      "name": "win-msvc-debug",
-      "configurePreset": "win-msvc-debug",
+      "name": "win-debug",
+      "configurePreset": "win-debug",
       "output": { "outputOnFailure": true }
     }
   ]
