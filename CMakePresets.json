@@ -8,26 +8,48 @@
   "configurePresets": [
     {
       "name": "dev",
-      "displayName": "Dev (Release, VS2022)",
-      "generator": "Ninja",
+      "displayName": "Linux (Release, GCC)",
+      "generator": "Unix Makefiles",
       "binaryDir": "build",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release",
-        "QBIN_BUILD_TESTS": "ON",
-        "CMAKE_C_COMPILER": "cl.exe",
-        "CMAKE_CXX_COMPILER": "cl.exe"
+        "CMAKE_C_COMPILER": "gcc",
+        "CMAKE_CXX_COMPILER": "g++",
+        "QBIN_BUILD_TESTS": "ON"
       }
     },
     {
       "name": "dev-debug",
-      "displayName": "Dev (Debug, VS2022)",
-      "generator": "Ninja",
+      "displayName": "Linux (Debug, GCC)",
+      "generator": "Unix Makefiles",
       "binaryDir": "build-debug",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Debug",
-        "QBIN_BUILD_TESTS": "ON",
-        "CMAKE_C_COMPILER": "cl.exe",
-        "CMAKE_CXX_COMPILER": "cl.exe"
+        "CMAKE_C_COMPILER": "gcc",
+        "CMAKE_CXX_COMPILER": "g++",
+        "QBIN_BUILD_TESTS": "ON"
+      }
+    },
+    {
+      "name": "win-release",
+      "displayName": "Windows (Release, VS2022)",
+      "generator": "Visual Studio 17 2022",
+      "architecture": "x64",
+      "binaryDir": "build\\win-release",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "QBIN_BUILD_TESTS": "ON"
+      }
+    },
+    {
+      "name": "win-debug",
+      "displayName": "Windows (Debug, VS2022)",
+      "generator": "Visual Studio 17 2022",
+      "architecture": "x64",
+      "binaryDir": "build\\win-debug",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "QBIN_BUILD_TESTS": "ON"
       }
     }
   ],
@@ -39,6 +61,14 @@
     {
       "name": "dev-debug",
       "configurePreset": "dev-debug"
+    },
+    {
+      "name": "win-release",
+      "configurePreset": "win-release"
+    },
+    {
+      "name": "win-debug",
+      "configurePreset": "win-debug"
     }
   ],
   "testPresets": [
@@ -50,6 +80,16 @@
     {
       "name": "dev-debug",
       "configurePreset": "dev-debug",
+      "output": { "outputOnFailure": true }
+    },
+    {
+      "name": "win-release",
+      "configurePreset": "win-release",
+      "output": { "outputOnFailure": true }
+    },
+    {
+      "name": "win-debug",
+      "configurePreset": "win-debug",
       "output": { "outputOnFailure": true }
     }
   ]
