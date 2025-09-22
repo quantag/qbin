@@ -1,6 +1,7 @@
 #include "qbin_compiler/qasm_frontend.hpp"
 #include "qbin_compiler/tools.hpp"
 #include "qbin_compiler/custom_gate.hpp"
+#include "qbin_compiler/qasm_lexer.hpp"
 
 #include <algorithm>
 #include <cctype>
@@ -108,52 +109,10 @@ namespace qbin_compiler {
         // ------------------------ The parser ------------------------
 
         Program parse_qasm_subset(std::string_view text, bool verbose) {
-            string src(text);
             GateRegistry gate_registry;
+            string src(text);
 
-
-            vector<string> raw_lines;
-            {
-                string cur;
-                bool in_block_comment = false;
-                for (size_t i = 0; i < src.size(); ++i) {
-                    char c = src[i];
-                    char n = (i + 1 < src.size()) ? src[i + 1] : '\0';
-
-                    if (!in_block_comment && c == '/' && n == '/') {
-                        while (i < src.size() && src[i] != '\n') ++i;
-                        if (i < src.size() && src[i] == '\n') {
-                            raw_lines.push_back(cur);
-                            cur.clear();
-                        }
-                        continue;
-                    }
-
-                    if (!in_block_comment && c == '/' && n == '*') {
-                        in_block_comment = true;
-                        ++i;
-                        continue;
-                    }
-
-                    if (in_block_comment && c == '*' && n == '/') {
-                        in_block_comment = false;
-                        ++i;
-                        continue;
-                    }
-
-                    if (in_block_comment) continue;
-
-                    if (c == '\r') continue;
-                    if (c == '\n') {
-                        raw_lines.push_back(cur);
-                        cur.clear();
-                    }
-                    else {
-                        cur.push_back(c);
-                    }
-                }
-                if (!cur.empty()) raw_lines.push_back(cur);
-            }
+            auto raw_lines = qbin_compiler::qasm::LineProcessor::preprocess(src);
 
             // ---- 2) Parse register declarations + custom gate definitions; collect the rest ----
             // Registers: keep simple maps name (base, size).
