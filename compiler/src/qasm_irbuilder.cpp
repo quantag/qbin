@@ -29,7 +29,7 @@ namespace qbin_compiler {
         // --- resolver helpers ---
         static int resolve_index(const std::unordered_map<std::string, std::pair<int,int>>& regs,
                                  const std::string& token,
-                                 bool verbose)
+                                 bool /* verbose */ )
         {
             static std::regex ri(R"(^\s*([A-Za-z_]\w*)\s*\[\s*(\d+)\s*\]\s*$)");
             std::smatch m;

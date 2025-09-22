@@ -272,7 +272,7 @@ namespace qbin_compiler {
 
             // ---- 3) Helpers to resolve indices like q[3], c[1] into absolute indices ----
 
-            auto resolve_qubit = [&](const string& token) -> int {
+          /*  auto resolve_qubit = [&](const string& token) -> int {
                 // token is expected like: name[index]
                 static regex ri(R"(^\s*([A-Za-z_]\w*)\s*\[\s*(\d+)\s*\]\s*$)");
                 smatch m;
@@ -297,7 +297,7 @@ namespace qbin_compiler {
                 int base = it->second.first, sz = it->second.second;
                 if (idx < 0 || idx >= sz) return -1;
                 return base + idx;
-                };
+                };*/
 
             // ---- 4) Canonical expansion: expand user statements into primitive strings ----
             function<void(const string&,
