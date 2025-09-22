@@ -12,6 +12,10 @@
 #include <utility>
 #include <vector>
 
+#ifdef WIN32
+#include <functional>
+#endif
+
 using namespace std;
 
 using qbin_compiler::util::to_lower_ascii;
