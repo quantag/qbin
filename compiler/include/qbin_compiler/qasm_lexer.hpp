@@ -9,7 +9,7 @@ namespace qbin_compiler {
          * LineProcessor: takes raw QASM text and produces cleaned lines.
          * Responsibilities:
          *  - Remove // comments
-         *  - Remove /* ... * / block comments
+         *  - Remove  block comments
          *  - Normalize CR/LF
          *  - Return non-empty raw lines
          */
