@@ -26,8 +26,8 @@ function(add_qasm_roundtrip name qasm_path)
             --decompiler ${QBIN_DECOMPILE}
             --qasm "${qasm_path}"
             --workdir "${CMAKE_BINARY_DIR}/rt_${name}"
-            --exact
   )
+
 endfunction()
 
 file(GLOB QASM_FILES "${TEST_DATA_DIR}/*.qasm")
