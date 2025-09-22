@@ -139,20 +139,21 @@ namespace qbin_compiler {
                         int imm = std::stoi(m[2].str());
                         if (c < 0) { vlog(verbose, "if resolve failed: " + s); continue; }
 
-                        Instr i{}; i.op = Op::IF_EQ; i.has_aux = true; i.aux = static_cast<uint32_t>(c);
+                        // inline representation
+                        std::string body = trim(m[3].str());
+                        // emit as a CALLG-like pseudo op
+                        Instr i{}; i.op = Op::IF_EQ;
+                        i.has_aux = true; i.aux = static_cast<uint32_t>(c);
                         i.has_imm8 = true; i.imm8 = static_cast<uint8_t>(imm);
                         prog.code.push_back(i);
 
-                        // recursively emit body statement(s)
-                        std::string body = trim(m[3].str());
+                        // Immediately emit the body instruction
                         std::vector<std::string> tmp{ body };
                         Program sub = IRBuilder::emit(tmp, qregs, cregs, verbose);
                         prog.code.insert(prog.code.end(), sub.code.begin(), sub.code.end());
-
-                        // close IF
-                        Instr e{}; e.op = Op::ENDIF; prog.code.push_back(e);
                         continue;
                     }
+
 
                     if (std::regex_match(s, m, rifne)) {
                         int c = resolve_cbit(trim(m[1].str()));

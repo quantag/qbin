@@ -86,27 +86,6 @@ namespace qbin_compiler {
             if (!t.empty()) out.push_back(string(t));
             return out;
         }
-        /*
-        static bool match_if_one_stmt(const std::string& line,
-            std::string& creg_name,
-            int& cidx,
-            bool& is_eq,
-            int& imm,
-            std::string& body_stmt) {
-
-            static const std::regex re(
-                R"(^\s*if\s*\(\s*([A-Za-z_][A-Za-z0-9_]*)\s*\[(\d+)\]\s*(==|!=)\s*([0-9]+)\s*\)\s*\{\s*([\s\S]*?)\s*\}\s*;?\s*$)",
-                std::regex::icase);
-
-            std::smatch m;
-            if (!std::regex_match(line, m, re)) return false;
-            creg_name = to_lower_ascii(m[1].str());
-            cidx = std::stoi(m[2].str());
-            is_eq = (m[3].str() == "==");
-            imm = std::stoi(m[4].str());
-            body_stmt = m[5].str();
-            return true;
-        }*/
 
         // ------------------------ The parser ------------------------
 
@@ -269,35 +248,6 @@ namespace qbin_compiler {
                 // Any other line goes to nondef_lines for later canonical processing
                 nondef_lines.push_back(line);
             }
-
-            // ---- 3) Helpers to resolve indices like q[3], c[1] into absolute indices ----
-
-          /*  auto resolve_qubit = [&](const string& token) -> int {
-                // token is expected like: name[index]
-                static regex ri(R"(^\s*([A-Za-z_]\w*)\s*\[\s*(\d+)\s*\]\s*$)");
-                smatch m;
-                if (!regex_match(token, m, ri)) return -1;
-                string nm = to_lower_ascii(m[1].str());
-                int idx = stoi(m[2].str());
-                auto it = qregs.find(nm);
-                if (it == qregs.end()) return -1;
-                int base = it->second.first, sz = it->second.second;
-                if (idx < 0 || idx >= sz) return -1;
-                return base + idx;
-                };
-
-            auto resolve_cbit = [&](const string& token) -> int {
-                static regex ri(R"(^\s*([A-Za-z_]\w*)\s*\[\s*(\d+)\s*\]\s*$)");
-                smatch m;
-                if (!regex_match(token, m, ri)) return -1;
-                string nm = to_lower_ascii(m[1].str());
-                int idx = stoi(m[2].str());
-                auto it = cregs.find(nm);
-                if (it == cregs.end()) return -1;
-                int base = it->second.first, sz = it->second.second;
-                if (idx < 0 || idx >= sz) return -1;
-                return base + idx;
-                };*/
 
             // ---- 4) Canonical expansion: expand user statements into primitive strings ----
             function<void(const string&,
