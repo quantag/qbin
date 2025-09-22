@@ -62,6 +62,31 @@ build/decompiler/qbin-decompile
 ```
 
 ---
+## Build and run tests on Windows
+**Requirements:** Visual Studio 2022 with C++ workload, CMake ≥ 3.20, and Python 3.
+
+### One command (configure, build, and test)
+```bat
+cmake --preset win-release
+cmake --build --preset win-release --config Release
+ctest --preset win-release -C Release --output-on-failure
+```
+
+### Debug build
+```bat
+cmake --preset win-debug
+cmake --build --preset win-debug --config Debug
+ctest --preset win-debug -C Debug --output-on-failure
+```
+
+### Artifacts
+After building you will find the executables in:
+```
+build\win-release\Release\qbin-compile.exe
+build\win-release\Release\qbin-decompile.exe
+```
+(or the `win-debug\Debug\` folder if you built Debug).
+
 
 ## CLI usage
 ### Compile OpenQASM → QBIN
@@ -143,3 +168,5 @@ Licensed under the terms in **[LICENSE](LICENSE)**.
 
 ## Acknowledgements
 Thanks to the OpenQASM community and the broader quantum‑stack ecosystem for prior art and inspiration.
+
+
