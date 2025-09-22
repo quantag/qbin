@@ -128,53 +128,104 @@ namespace qbin_compiler {
                     }
                 }
 
-                // TODO: IF / ENDIF
-               /* {
-                    static std::regex rif(R"(^\s*if\s*\(\s*([A-Za-z_]\w*\[\d+\])\s*==\s*(\d+)\s*\)\s*(.+)$)", std::regex::icase);
-                    static std::regex rifne(R"(^\s*if\s*\(\s*([A-Za-z_]\w*\[\d+\])\s*!=\s*(\d+)\s*\)\s*(.+)$)", std::regex::icase);
+                // IF / ENDIF
+                {
+                    // Matches: if (c[1] == 1) body
+                    static std::regex rif(R"(^\s*if\s*\(\s*([A-Za-z_]\w*\s*\[\s*\d+\s*\])\s*==\s*(\d+)\s*\)\s*(.+?)\s*;?\s*$)", std::regex::icase);
+                    static std::regex rifne(R"(^\s*if\s*\(\s*([A-Za-z_]\w*\s*\[\s*\d+\s*\])\s*!=\s*(\d+)\s*\)\s*(.+?)\s*;?\s*$)", std::regex::icase);
                     std::smatch m;
 
+                    auto emit_if_block = [&](bool is_eq, const std::string& ctoken, int imm, const std::string& body_str) {
+                        // Resolve cbit index
+                        int cidx = resolve_cbit(trim(ctoken));
+                        if (cidx < 0) { vlog(verbose, std::string("if resolve failed: ") + ctoken); return; }
+
+                        // Emit IF opcode
+                        Instr ifi{};
+                        ifi.op = is_eq ? Op::IF_EQ : Op::IF_NEQ;
+                        ifi.has_aux = true;
+                        ifi.aux = static_cast<uint32_t>(cidx);
+                        ifi.has_imm8 = true;
+                        ifi.imm8 = static_cast<uint8_t>(imm);
+                        prog.code.push_back(ifi);
+
+                        // Extract body. Accept either single statement or a braced block.
+                        std::string body = trim(body_str);
+
+                        // If body starts with '{', peel the braces and split into statements on semicolons at depth 0.
+                        std::vector<std::string> stmts;
+                        if (!body.empty() && body.front() == '{') {
+                            // Find matching closing brace for the first '{'
+                            int depth = 0;
+                            size_t endpos = std::string::npos;
+                            for (size_t i = 0; i < body.size(); ++i) {
+                                char ch = body[i];
+                                if (ch == '{') ++depth;
+                                else if (ch == '}') {
+                                    --depth;
+                                    if (depth == 0) { endpos = i; break; }
+                                }
+                            }
+                            if (endpos == std::string::npos) {
+                                vlog(verbose, "if body brace mismatch");
+                            }
+                            else {
+                                std::string inner = trim(body.substr(1, endpos - 1));
+                                // Split inner on semicolons outside parentheses and braces
+                                size_t p = 0, last = 0; int dpar = 0, dcurly = 0;
+                                while (p <= inner.size()) {
+                                    bool at_end = (p == inner.size());
+                                    char ch = at_end ? '\0' : inner[p];
+                                    if (!at_end) {
+                                        if (ch == '(') ++dpar;
+                                        else if (ch == ')') --dpar;
+                                        else if (ch == '{') ++dcurly;
+                                        else if (ch == '}') --dcurly;
+                                    }
+                                    if (at_end || (ch == ';' && dpar == 0 && dcurly == 0)) {
+                                        std::string t = trim(std::string_view(inner).substr(last, p - last));
+                                        if (!t.empty()) stmts.push_back(t + ";");
+                                        last = p + 1;
+                                    }
+                                    ++p;
+                                }
+                            }
+                        }
+                        else {
+                            // Single statement body, ensure it ends with ';'
+                            std::string one = body;
+                            if (!one.empty() && one.back() != ';') one.push_back(';');
+                            if (!one.empty()) stmts.push_back(one);
+                        }
+
+                        // Recursively emit body statements
+                        if (!stmts.empty()) {
+                            Program sub = IRBuilder::emit(stmts, qregs, cregs, verbose);
+                            prog.code.insert(prog.code.end(), sub.code.begin(), sub.code.end());
+                        }
+                        else {
+                            vlog(verbose, "empty if body");
+                        }
+
+                        // Close IF
+                        Instr endi{}; endi.op = Op::ENDIF; prog.code.push_back(endi);
+                        };
+
                     if (std::regex_match(s, m, rif)) {
-                        int c = resolve_cbit(trim(m[1].str()));
+                        std::string ctoken = m[1].str();
                         int imm = std::stoi(m[2].str());
-                        if (c < 0) { vlog(verbose, "if resolve failed: " + s); continue; }
-
-                        // inline representation
-                        std::string body = trim(m[3].str());
-                        // emit as a CALLG-like pseudo op
-                        Instr i{}; i.op = Op::IF_EQ;
-                        i.has_aux = true; i.aux = static_cast<uint32_t>(c);
-                        i.has_imm8 = true; i.imm8 = static_cast<uint8_t>(imm);
-                        prog.code.push_back(i);
-
-                        // Immediately emit the body instruction
-                        std::vector<std::string> tmp{ body };
-                        Program sub = IRBuilder::emit(tmp, qregs, cregs, verbose);
-                        prog.code.insert(prog.code.end(), sub.code.begin(), sub.code.end());
+                        std::string body = m[3].str();
+                        emit_if_block(true, ctoken, imm, body);
                         continue;
                     }
-
                     if (std::regex_match(s, m, rifne)) {
-                        int c = resolve_cbit(trim(m[1].str()));
+                        std::string ctoken = m[1].str();
                         int imm = std::stoi(m[2].str());
-                        if (c < 0) { vlog(verbose, "if resolve failed: " + s); continue; }
-
-                        Instr i{}; i.op = Op::IF_NEQ; i.has_aux = true; i.aux = static_cast<uint32_t>(c);
-                        i.has_imm8 = true; i.imm8 = static_cast<uint8_t>(imm);
-                        prog.code.push_back(i);
-
-                        // recursively emit body
-                        std::string body = trim(m[3].str());
-                        std::vector<std::string> tmp{ body };
-                        Program sub = IRBuilder::emit(tmp, qregs, cregs, verbose);
-                        prog.code.insert(prog.code.end(), sub.code.begin(), sub.code.end());
-
-                        // close IF
-                        Instr e{}; e.op = Op::ENDIF; prog.code.push_back(e);
+                        std::string body = m[3].str();
+                        emit_if_block(false, ctoken, imm, body);
                         continue;
                     }
                 }
-                */
 
                 // ignore barrier/reset defensively
                 {

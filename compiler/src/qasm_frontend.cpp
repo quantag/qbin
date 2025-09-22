@@ -351,23 +351,6 @@ namespace qbin_compiler {
 
             // ---- 5) Expand to canonical sequence (strings) ----
             auto canonical = StatementExpander::expand(nondef_lines, gate_registry, verbose);
-            std::vector<std::string> canonical_fixed;
-            canonical_fixed.reserve(canonical.size());
-
-            static std::regex rif(R"(^\s*if\s*\(\s*(c\[\d+\])\s*==\s*(\d+)\s*\)\s*(x|y|z|h)\s+(q\[\d+\]);$)", std::regex::icase);
-
-            for (auto& line : canonical) {
-                std::smatch m;
-                if (std::regex_match(line, m, rif)) {
-                    // expand to explicit IF_EQ / body / ENDIF pseudo-lines
-                    canonical_fixed.push_back("IF_EQ " + m[1].str() + " " + m[2].str());
-                    canonical_fixed.push_back(m[3].str() + " " + m[4].str() + ";");
-                    canonical_fixed.push_back("ENDIF");
-                }
-                else {
-                    canonical_fixed.push_back(line);
-                }
-            }
 
             // ---- 6) Emit IR from canonical statements, preserving order (including IF) ----
             Program prog = IRBuilder::emit(canonical, qregs, cregs, verbose);
