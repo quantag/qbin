@@ -86,7 +86,7 @@ namespace qbin_compiler {
             if (!t.empty()) out.push_back(string(t));
             return out;
         }
-
+        /*
         static bool match_if_one_stmt(const std::string& line,
             std::string& creg_name,
             int& cidx,
@@ -106,7 +106,7 @@ namespace qbin_compiler {
             imm = std::stoi(m[4].str());
             body_stmt = m[5].str();
             return true;
-        }
+        }*/
 
         // ------------------------ The parser ------------------------
 
