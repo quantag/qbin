@@ -3,6 +3,7 @@
 #include "qbin_compiler/custom_gate.hpp"
 #include "qbin_compiler/qasm_lexer.hpp"
 #include "qbin_compiler/qasm_expander.hpp"
+#include "qbin_compiler/qasm_irbuilder.hpp"
 
 #include <algorithm>
 #include <cctype>
@@ -402,141 +403,7 @@ namespace qbin_compiler {
             auto canonical = StatementExpander::expand(nondef_lines, gate_registry, verbose);
 
             // ---- 6) Emit IR from canonical statements, preserving order (including IF) ----
-            Program prog;
-
-            // emitter that handles primitive lines IR
-            auto emit_from_stmt = [&](const string& st) -> bool {
-                string s = trim(st);
-                if (s.empty()) return true;
-
-                {
-                    static regex rc(R"(^\s*(.+?)\s*=\s*measure\s+(.+?)\s*;?$)", regex::icase);
-                    smatch m;
-                    if (regex_match(s, m, rc)) {
-                        int q = resolve_qubit(trim(m[2].str()));
-                        int c = resolve_cbit(trim(m[1].str()));
-                        if (q < 0 || c < 0) { vlog(verbose, "measure resolve failed: " + s); return true; }
-                        emit_measure(prog.code, q, c);
-                        return true;
-                    }
-                }
-
-                // two-qubit
-                {
-                    static regex r2(R"(^\s*(cx|cz|swap)\s+(.+?)\s*,\s*(.+?)\s*;?$)", regex::icase);
-                    smatch m;
-                    if (regex_match(s, m, r2)) {
-                        int a = resolve_qubit(trim(m[2].str()));
-                        int b = resolve_qubit(trim(m[3].str()));
-                        if (a < 0 || b < 0) { vlog(verbose, "2q resolve failed: " + s); return true; }
-                        string op = to_lower_ascii(m[1].str());
-                        if (op == "cx")   emit_2q(prog.code, Op::CX, a, b);
-                        else if (op == "cz")   emit_2q(prog.code, Op::CZ, a, b);
-                        else if (op == "swap") emit_2q(prog.code, Op::SWAP, a, b);
-                        return true;
-                    }
-                }
-
-                // one-qubit non-param
-                {
-                    static regex r1(R"(^\s*(h|x|y|z|s|sdg|t|tdg|sx|sxdg)\s+(.+?)\s*;?$)", regex::icase);
-                    smatch m;
-                    if (regex_match(s, m, r1)) {
-                        int a = resolve_qubit(trim(m[2].str()));
-                        if (a < 0) { vlog(verbose, "1q resolve failed: " + s); return true; }
-                        string op = to_lower_ascii(m[1].str());
-                        if (op == "h")    emit_1q(prog.code, Op::H, a);
-                        else if (op == "x")    emit_1q(prog.code, Op::X, a);
-                        else if (op == "y")    emit_1q(prog.code, Op::Y, a);
-                        else if (op == "z")    emit_1q(prog.code, Op::Z, a);
-                        else if (op == "s")    emit_1q(prog.code, Op::S, a);
-                        else if (op == "sdg")  emit_1q(prog.code, Op::SDG, a);
-                        else if (op == "t")    emit_1q(prog.code, Op::T, a);
-                        else if (op == "tdg")  emit_1q(prog.code, Op::TDG, a);
-                        else if (op == "sx")   emit_1q(prog.code, Op::SX, a);
-                        else if (op == "sxdg") emit_1q(prog.code, Op::SXDG, a);
-                        return true;
-                    }
-                }
-
-                // param gates
-                {
-                    static regex rp(R"(^\s*(rx|ry|rz|phase)\s*\(\s*(.+?)\s*\)\s+(.+?)\s*;?$)", regex::icase);
-                    smatch m;
-                    if (regex_match(s, m, rp)) {
-                        string op = to_lower_ascii(m[1].str());
-                        string expr = trim(m[2].str());
-                        string aTok = trim(m[3].str());
-                        int a = resolve_qubit(aTok);
-                        if (a < 0) { vlog(verbose, "param resolve failed: " + s); return true; }
-
-                        double ang = 0.0;
-                        try { ang = eval_expr(expr); }
-                        catch (...) { vlog(verbose, "param eval failed, expr=" + expr); }
-
-                        if (op == "rx")      emit_angle(prog.code, Op::RX, a, ang);
-                        else if (op == "ry") emit_angle(prog.code, Op::RY, a, ang);
-                        else if (op == "rz") emit_angle(prog.code, Op::RZ, a, ang);
-                        else if (op == "phase") emit_angle(prog.code, Op::PHASE, a, ang);
-                        return true;
-                    }
-                }
-
-                return false; // not handled here
-                };
-
-            for (const auto& st : canonical) {
-                if (emit_from_stmt(st)) continue;
-
-                // IF handling here (order preserved)
-                {
-                    std::string creg_name, body;
-                    int cidx = -1, imm = 0; bool is_eq = true;
-                    if (match_if_one_stmt(st, creg_name, cidx, is_eq, imm, body)) {
-                        // resolve cbit absolute index
-                        int c_abs = -1;
-                        {
-                            std::ostringstream oss;
-                            oss << creg_name << "[" << cidx << "]";
-                            c_abs = resolve_cbit(oss.str());
-                        }
-                        if (c_abs < 0) {
-                            vlog(verbose, "IF cbit resolve failed: " + creg_name + "[" + to_string(cidx) + "]");
-                            continue;
-                        }
-
-                        Instr ifi{};
-                        ifi.op = is_eq ? Op::IF_EQ : Op::IF_NEQ;
-                        ifi.has_aux = true;  ifi.aux = static_cast<uint32_t>(c_abs);
-                        ifi.has_imm8 = true; ifi.imm8 = static_cast<uint8_t>(imm);
-                        prog.code.push_back(ifi);
-
-                        // expand IF body and emit
-                        vector<string> expanded;
-                        expand_stmt_recursive(body, {}, expanded);
-                        for (const auto& st2 : expanded) {
-                            if (!emit_from_stmt(st2)) {
-                                // ignore barrier/reset etc
-                                static regex rb(R"(^\s*(barrier|reset)\b)", regex::icase);
-                                if (regex_search(st2, rb)) continue;
-                                vlog(verbose, "ignored stmt in IF body: " + (st2.size() > 64 ? st2.substr(0, 64) : st2));
-                            }
-                        }
-
-                        Instr endi{}; endi.op = Op::ENDIF;
-                        prog.code.push_back(endi);
-                        continue;
-                    }
-                }
-
-                // ignore barrier/reset if they reach here (defensive)
-                {
-                    static regex rb(R"(^\s*(barrier|reset)\b)", regex::icase);
-                    if (regex_search(st, rb)) continue;
-                }
-
-                vlog(verbose, "ignored stmt: " + (st.size() > 64 ? st.substr(0, 64) : st));
-            }
+            Program prog = IRBuilder::emit(canonical, qregs, cregs, verbose);
 
             return prog;
         }
