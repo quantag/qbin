@@ -2,6 +2,7 @@
 #include "qbin_compiler/tools.hpp"
 #include "qbin_compiler/custom_gate.hpp"
 #include "qbin_compiler/qasm_lexer.hpp"
+#include "qbin_compiler/qasm_expander.hpp"
 
 #include <algorithm>
 #include <cctype>
@@ -398,13 +399,7 @@ namespace qbin_compiler {
                 };
 
             // ---- 5) Expand to canonical sequence (strings) ----
-            vector<string> canonical;
-            canonical.reserve(nondef_lines.size());
-            for (auto& s : nondef_lines) {
-                vector<string> tmp;
-                expand_stmt_recursive(s, {}, tmp);
-                canonical.insert(canonical.end(), tmp.begin(), tmp.end());
-            }
+            auto canonical = StatementExpander::expand(nondef_lines, gate_registry, verbose);
 
             // ---- 6) Emit IR from canonical statements, preserving order (including IF) ----
             Program prog;

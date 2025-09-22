@@ -21,6 +21,7 @@ set(QBIN_COMPILER_SOURCES
   src/custom_gate.cpp
   src/qasm_frontend.cpp
   src/qasm_lexer.cpp
+  src/qasm_expander.cpp
 )
 
 set(QBIN_COMPILER_HEADERS
@@ -29,6 +30,7 @@ set(QBIN_COMPILER_HEADERS
   include/qbin_compiler/custom_gate.hpp
   include/qbin_compiler/tools.hpp
   include/qbin_compiler/qasm_lexer.hpp
+  include/qbin_compiler/qasm_expander.hpp
 )
 
 add_executable(qbin-compile ${QBIN_COMPILER_SOURCES} ${QBIN_COMPILER_HEADERS})
