@@ -1,33 +1,45 @@
 {
   "version": 3,
   "cmakeMinimumRequired": {
-    "major": 3, "minor": 20, "patch": 0
+    "major": 3,
+    "minor": 20,
+    "patch": 0
   },
   "configurePresets": [
     {
       "name": "dev",
-      "displayName": "Dev (Release)",
-      "generator": "Unix Makefiles",
+      "displayName": "Dev (Release, VS2022)",
+      "generator": "Ninja",
       "binaryDir": "build",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release",
-        "QBIN_BUILD_TESTS": "ON"
+        "QBIN_BUILD_TESTS": "ON",
+        "CMAKE_C_COMPILER": "cl.exe",
+        "CMAKE_CXX_COMPILER": "cl.exe"
       }
     },
     {
       "name": "dev-debug",
-      "displayName": "Dev (Debug)",
-      "generator": "Unix Makefiles",
+      "displayName": "Dev (Debug, VS2022)",
+      "generator": "Ninja",
       "binaryDir": "build-debug",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Debug",
-        "QBIN_BUILD_TESTS": "ON"
+        "QBIN_BUILD_TESTS": "ON",
+        "CMAKE_C_COMPILER": "cl.exe",
+        "CMAKE_CXX_COMPILER": "cl.exe"
       }
     }
   ],
   "buildPresets": [
-    { "name": "dev", "configurePreset": "dev" },
-    { "name": "dev-debug", "configurePreset": "dev-debug" }
+    {
+      "name": "dev",
+      "configurePreset": "dev"
+    },
+    {
+      "name": "dev-debug",
+      "configurePreset": "dev-debug"
+    }
   ],
   "testPresets": [
     {
