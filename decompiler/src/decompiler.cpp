@@ -214,42 +214,35 @@ namespace qbin_decompiler {
             case 0x82: {
                 int val = di.has_imm8 ? di.imm8 : 0;
                 // Try single-instruction inline if followed by body + endif
-                // Try single-instruction inline if followed by body + endif
                 if (idx + 2 < instrs.size() && instrs[idx + 2].opcode == 0x8F) {
                     const auto& body = instrs[idx + 1];
-
-                    // Reuse decompilation logic: generate QASM for the body only
-                    std::ostringstream body_ss;
+                    std::ostringstream one;
                     switch (body.opcode) {
-                    case 0x01: body_ss << "x q[" << body.a << "];"; break;
-                    case 0x02: body_ss << "y q[" << body.a << "];"; break;
-                    case 0x03: body_ss << "z q[" << body.a << "];"; break;
-                    case 0x04: body_ss << "h q[" << body.a << "];"; break;
-                    case 0x05: body_ss << "s q[" << body.a << "];"; break;
-                    case 0x06: body_ss << "sdg q[" << body.a << "];"; break;
-                    case 0x07: body_ss << "t q[" << body.a << "];"; break;
-                    case 0x08: body_ss << "tdg q[" << body.a << "];"; break;
-                    case 0x09: body_ss << "sx q[" << body.a << "];"; break;
-                    case 0x0A: body_ss << "sxdg q[" << body.a << "];"; break;
-                    case 0x0B: body_ss << "rx(" << (body.has_angle0 ? body.angle0 : 0.0f) << ") q[" << body.a << "];"; break;
-                    case 0x0C: body_ss << "ry(" << (body.has_angle0 ? body.angle0 : 0.0f) << ") q[" << body.a << "];"; break;
-                    case 0x0D: body_ss << "rz(" << (body.has_angle0 ? body.angle0 : 0.0f) << ") q[" << body.a << "];"; break;
-                    case 0x10: body_ss << "cx q[" << body.a << "], q[" << body.b << "];"; break;
-                    case 0x13: body_ss << "swap q[" << body.a << "], q[" << body.b << "];"; break;
-                    case 0x30: body_ss << "c[" << (body.has_aux ? int(body.aux) : 0) << "] = measure q[" << body.a << "];"; break;
+                    case 0x01: one << "x q[" << body.a << "];"; break;
+                    case 0x02: one << "y q[" << body.a << "];"; break;
+                    case 0x03: one << "z q[" << body.a << "];"; break;
+                    case 0x04: one << "h q[" << body.a << "];"; break;
+                    case 0x05: one << "s q[" << body.a << "];"; break;
+                    case 0x06: one << "sdg q[" << body.a << "];"; break;
+                    case 0x07: one << "t q[" << body.a << "];"; break;
+                    case 0x08: one << "tdg q[" << body.a << "];"; break;
+                    case 0x09: one << "sx q[" << body.a << "];"; break;
+                    case 0x0A: one << "sxdg q[" << body.a << "];"; break;
+                    case 0x0B: one << "rx(" << (body.has_angle0 ? body.angle0 : 0.0f) << ") q[" << body.a << "];"; break;
+                    case 0x0C: one << "ry(" << (body.has_angle0 ? body.angle0 : 0.0f) << ") q[" << body.a << "];"; break;
+                    case 0x0D: one << "rz(" << (body.has_angle0 ? body.angle0 : 0.0f) << ") q[" << body.a << "];"; break;
+                    case 0x10: one << "cx q[" << body.a << "], q[" << body.b << "];"; break;
+                    case 0x13: one << "swap q[" << body.a << "], q[" << body.b << "];"; break;
+                    case 0x30: one << "c[" << (body.has_aux ? int(body.aux) : 0) << "] = measure q[" << body.a << "];"; break;
                     default: break;
                     }
-
-                    std::string bs = body_ss.str();
+                    std::string bs = one.str();
                     if (!bs.empty()) {
-                        q << "if (c[" << di.aux << "] "
-                            << (di.opcode == 0x81 ? "==" : "!=") << " "
-                            << val << ") { " << bs << " }\n";
+                        q << "if (c[" << di.aux << "] " << (di.opcode == 0x81 ? "==" : "!=") << " " << val << ") { " << bs << " }\n";
                         idx += 2;
                         break;
                     }
                 }
-
                 // Fallback multi-line
                 q << "if (c[" << di.aux << "] " << (di.opcode == 0x81 ? "==" : "!=") << " " << val << ") {\n";
                 size_t j = idx + 1;
