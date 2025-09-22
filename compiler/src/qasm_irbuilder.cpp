@@ -128,8 +128,8 @@ namespace qbin_compiler {
                     }
                 }
 
-                // IF / ENDIF
-                {
+                // TODO: IF / ENDIF
+               /* {
                     static std::regex rif(R"(^\s*if\s*\(\s*([A-Za-z_]\w*\[\d+\])\s*==\s*(\d+)\s*\)\s*(.+)$)", std::regex::icase);
                     static std::regex rifne(R"(^\s*if\s*\(\s*([A-Za-z_]\w*\[\d+\])\s*!=\s*(\d+)\s*\)\s*(.+)$)", std::regex::icase);
                     std::smatch m;
@@ -154,7 +154,6 @@ namespace qbin_compiler {
                         continue;
                     }
 
-
                     if (std::regex_match(s, m, rifne)) {
                         int c = resolve_cbit(trim(m[1].str()));
                         int imm = std::stoi(m[2].str());
@@ -175,7 +174,7 @@ namespace qbin_compiler {
                         continue;
                     }
                 }
-
+                */
 
                 // ignore barrier/reset defensively
                 {
