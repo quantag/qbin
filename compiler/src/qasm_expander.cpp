@@ -77,6 +77,20 @@ namespace qbin_compiler {
                     }
                 }
 
+                // three-qubit gates
+                {
+                    static std::regex r3(R"(^\s*(ccx)\s+(.+?)\s*,\s*(.+?)\s*,\s*(.+?)\s*;?$)", std::regex::icase);
+                    std::smatch m;
+                    if (std::regex_match(s, m, r3)) {
+                        std::string a = trim(m[2].str());
+                        std::string b = trim(m[3].str());
+                        std::string c = trim(m[4].str());
+                        out.push_back(ensure_semi("ccx " + a + ", " + b + ", " + c));
+                        return;
+                    }
+                }
+
+
                 // parametric gates
                 {
                     static std::regex rp(R"(^\s*(rx|ry|rz|phase)\s*\(\s*(.+?)\s*\)\s+(.+?)\s*;?$)", std::regex::icase);

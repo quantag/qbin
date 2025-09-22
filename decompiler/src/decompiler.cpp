@@ -203,7 +203,9 @@ namespace qbin_decompiler {
             case 0x15: q << "crx(" << (di.has_angle0 ? di.angle0 : 0.0f) << ") q[" << di.a << "], q[" << di.b << "];\n"; break;
             case 0x16: q << "cry(" << (di.has_angle0 ? di.angle0 : 0.0f) << ") q[" << di.a << "], q[" << di.b << "];\n"; break;
             case 0x17: q << "crz(" << (di.has_angle0 ? di.angle0 : 0.0f) << ") q[" << di.a << "], q[" << di.b << "];\n"; break;
-
+            case 0x19:
+                q << "ccx q[" << di.a << "], q[" << di.b << "], q[" << di.c << "];\n";
+                break;
             case 0x20: q << "rxx(" << (di.has_angle0 ? di.angle0 : 0.0f) << ") q[" << di.a << "], q[" << di.b << "];\n"; break;
             case 0x21: q << "ryy(" << (di.has_angle0 ? di.angle0 : 0.0f) << ") q[" << di.a << "], q[" << di.b << "];\n"; break;
             case 0x22: q << "rzz(" << (di.has_angle0 ? di.angle0 : 0.0f) << ") q[" << di.a << "], q[" << di.b << "];\n"; break;
@@ -233,6 +235,10 @@ namespace qbin_decompiler {
                     case 0x0D: one << "rz(" << (body.has_angle0 ? body.angle0 : 0.0f) << ") q[" << body.a << "];"; break;
                     case 0x10: one << "cx q[" << body.a << "], q[" << body.b << "];"; break;
                     case 0x13: one << "swap q[" << body.a << "], q[" << body.b << "];"; break;
+                    case 0x19:
+                        one << "ccx q[" << body.a << "], q[" << body.b << "], q[" << body.c << "];";
+                        break;
+
                     case 0x30: one << "c[" << (body.has_aux ? int(body.aux) : 0) << "] = measure q[" << body.a << "];"; break;
                     default: break;
                     }

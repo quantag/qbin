@@ -25,6 +25,11 @@ namespace qbin_compiler {
         static inline void emit_measure(std::vector<Instr>& out, int q, int c) {
             Instr i{}; i.op = Op::MEASURE; i.a = q; i.has_aux = true; i.aux = static_cast<uint32_t>(c); out.push_back(i);
         }
+        static inline void emit_3q(std::vector<Instr>& out, Op op, int a, int b, int c) {
+            Instr i{}; i.op = op; i.a = a; i.b = b; i.c = c;
+            out.push_back(i);
+        }
+
 
         // --- resolver helpers ---
         static int resolve_index(const std::unordered_map<std::string, std::pair<int,int>>& regs,
@@ -66,6 +71,23 @@ namespace qbin_compiler {
                         int c = resolve_cbit(trim(m[1].str()));
                         if (q < 0 || c < 0) { vlog(verbose, "measure resolve failed: " + s); continue; }
                         emit_measure(prog.code, q, c);
+                        continue;
+                    }
+                }
+
+                // three-qubit
+                {
+                    static std::regex r3(R"(^\s*(ccx)\s+(.+?)\s*,\s*(.+?)\s*,\s*(.+?)\s*;?$)", std::regex::icase);
+                    std::smatch m;
+                    if (std::regex_match(s, m, r3)) {
+                        int a = resolve_qubit(trim(m[2].str()));
+                        int b = resolve_qubit(trim(m[3].str()));
+                        int c = resolve_qubit(trim(m[4].str()));
+                        if (a < 0 || b < 0 || c < 0) {
+                            vlog(verbose, "3q resolve failed: " + s);
+                            continue;
+                        }
+                        emit_3q(prog.code, Op::CCX, a, b, c);
                         continue;
                     }
                 }
