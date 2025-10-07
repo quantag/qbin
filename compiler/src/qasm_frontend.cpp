@@ -112,26 +112,44 @@ namespace qbin_compiler {
                 if (ll.rfind("openqasm", 0) == 0) continue;
                 if (ll.rfind("include", 0) == 0)  continue;
 
-                // qubit[N] name;  or bit[N] name;
+                // qubit[N] name;  or bit[N] name;  or qreg name[N];  or creg name[N];
                 {
-                    static regex rq(R"(^\s*qubit\s*\[\s*(\d+)\s*\]\s*([A-Za-z_]\w*)\s*;?\s*$)", regex::icase);
-                    static regex rc(R"(^\s*bit\s*\[\s*(\d+)\s*\]\s*([A-Za-z_]\w*)\s*;?\s*$)", regex::icase);
+                    static regex rq1(R"(^\s*qubit\s*\[\s*(\d+)\s*\]\s*([A-Za-z_]\w*)\s*;?\s*$)", regex::icase);
+                    static regex rc1(R"(^\s*bit\s*\[\s*(\d+)\s*\]\s*([A-Za-z_]\w*)\s*;?\s*$)", regex::icase);
+                    static regex rq2(R"(^\s*qreg\s+([A-Za-z_]\w*)\s*\[\s*(\d+)\s*\]\s*;?\s*$)", regex::icase);
+                    static regex rc2(R"(^\s*creg\s+([A-Za-z_]\w*)\s*\[\s*(\d+)\s*\]\s*;?\s*$)", regex::icase);
+
                     smatch m;
-                    if (regex_match(line, m, rq)) {
+                    if (regex_match(line, m, rq1)) {
                         int sz = stoi(m[1].str());
                         string nm = to_lower_ascii(m[2].str());
                         qregs[nm] = { q_base, sz };
                         q_base += sz;
                         continue;
                     }
-                    if (regex_match(line, m, rc)) {
+                    if (regex_match(line, m, rc1)) {
                         int sz = stoi(m[1].str());
                         string nm = to_lower_ascii(m[2].str());
                         cregs[nm] = { c_base, sz };
                         c_base += sz;
                         continue;
                     }
+                    if (regex_match(line, m, rq2)) {
+                        string nm = to_lower_ascii(m[1].str());
+                        int sz = stoi(m[2].str());
+                        qregs[nm] = { q_base, sz };
+                        q_base += sz;
+                        continue;
+                    }
+                    if (regex_match(line, m, rc2)) {
+                        string nm = to_lower_ascii(m[1].str());
+                        int sz = stoi(m[2].str());
+                        cregs[nm] = { c_base, sz };
+                        c_base += sz;
+                        continue;
+                    }
                 }
+
 
                 // Custom gate definition:
                 // We accept both "gate name a,b,c { .. }" and multi-line with nested braces.
